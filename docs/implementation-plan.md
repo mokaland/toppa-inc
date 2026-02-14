@@ -3,7 +3,7 @@
 > 作成: Founding Engineer カルロス・メンデス
 > 日付: 2026-02-14
 > ステータス: 実装計画策定完了
-> レビュー対象: CTO マルコ・ロssi
+> レビュー対象: CTO マルコ・ロッシ
 
 ## 1. 実装Priorityとスケジュール
 
@@ -119,7 +119,7 @@ Cloudflare Workers
     ├── CSV/Excel解析: papaparse + xlsx
     │
     ▼ AI Provider API
-OpenAI GPT-4o (数据分析 + レポート生成)
+OpenAI GPT-4o (データ分析 + レポート生成)
 ```
 
 #### データベーススキーマ
@@ -262,7 +262,7 @@ CREATE POLICY "Users can insert own documents"
 | 全結合テスト通過 | 0 failure | カルロス |
 | E2Eテスト通過 | 0 failure | カルロス |
 | CTOコードレビュー | Approve | マルコ |
-| セキュリティチェック | 脆弱性なし | カル洛斯 |
+| セキュリティチェック | 脆弱性なし | カルロス |
 
 ### 4-2. パフォーマンス要件
 
