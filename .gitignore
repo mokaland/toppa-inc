@@ -1,0 +1,12 @@
+# プロダクトリポジトリ（各プロダクトは個別リポジトリで管理）
+products/*/
+
+# 環境変数
+.env
+.env.*
+
+# OS
+.DS_Store
+
+# Private
+.private/
