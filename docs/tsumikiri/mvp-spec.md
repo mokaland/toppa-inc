@@ -1,6 +1,1 @@
-# ツミキリ（Tsumikiri）MVP 詳細仕様書
-
-> 作成: PdM キム・スジン
-> 日付: 2026-02-14
-> ステータス: 仕様策定中
-> レビュー対象: CEO 高橋レン
+FILE: docs/tsumikiri/tech-architecture.md
