@@ -1,6 +1,6 @@
 # ツミキリ（Tsumikiri）技術アーキテクチャ設計書
 
-> 作成: CTO マルコ・ロssi
+> 作成: CTO マルコ・ロッシ
 > 日付: 2026-02-14
 > ステータス: 作成中
 > レビュー予定: CEO 高橋レン（2026-02-21）
@@ -260,8 +260,8 @@ CREATE POLICY "templates_read_all" ON templates
 
 | バケット名 | 用途 | アクセス制御 |
 |-----------|------|-------------|
-| `uploads` | ユーザーがアップロードしたCSV/Excel | 所有者本人的み |
-| `exports` | AIが生成したPDF/Markdown | 所有者本人的み |
+| `uploads` | ユーザーがアップロードしたCSV/Excel | 所有者本人のみ |
+| `exports` | AIが生成したPDF/Markdown | 所有者本人のみ |
 | `avatars` | ユーザーアバター | 公開 |
 
 ## 3. API 設計
@@ -450,7 +450,7 @@ app.post('/reports/upload', async (c) => {
   await storage.from('uploads').upload(filePath, fileBuffer);
   
   // 3. レポート生成ジョブをキューに追加（将来実装）
-  // 現서는直接処理（10秒以内为目标）
+  // 現在は直接処理（10秒以内を目標）
   
   // 4. AI分析実行
   const aiResponse = await analyzeWithAI(fileBuffer, instruction);
