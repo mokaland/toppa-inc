@@ -24,12 +24,20 @@
 - **Supabase (PostgreSQL)** — 認証 + DB + ストレージを一括提供
 - Row Level Security（RLS）によるデータ分離
 
-### AI
+### AI（プロダクト向け）
 - **BYOK方式**: ユーザーのAPIキーでAI機能を利用
   - OpenAI (GPT-4o / GPT-4.5)
   - Anthropic (Claude Sonnet 4.5)
   - Google (Gemini 2.5 Pro)
 - **マネージド方式**: TOPPA Inc.のAPIキーを使用（Pro プラン）
+
+### AI（社内エージェント基盤）
+- **MiniMax M2.5 Standard** — AI社員の全ロールが使用するモデル
+  - $0.15/1M input, $1.20/1M output
+  - コーディング能力: SWE-Bench 80.2%（Claude Opus 4.6級）
+  - 24時間フル自律運営: 月¥1,700
+- **GCP Cloud Functions + Cloud Scheduler** — 1-2時間おきにセッション自動実行
+- **GitHub API** — AI社員がリポジトリにコミット・push
 
 ### ホスティング
 - **Cloudflare Pages** — フロントエンドホスティング

@@ -26,3 +26,13 @@
   - 第2弾以降: 集客AI、採用AIなど経営者の"致命的な詰み"を解決するプロダクト
   - 各プロダクトの企画はAI社員（PdM）が自律的に判断する。人間からの指示は不要
   - プロダクト間で技術基盤・ユーザーベースを共有し、エコシステムを形成する
+
+## Amendment #3: AI実行エンジンのモデル選定 — MiniMax M2.5
+- 日付: 2026-02-14
+- 起案: CEO（高橋レン）
+- 内容: TOPPA Inc.のAI社員は **MiniMax M2.5** で稼働する。24時間フル自律運営を月¥1,700で実現する。
+  - **モデル**: MiniMax M2.5 Standard（$0.15/1M input, $1.20/1M output）
+  - **選定理由**: コーディング能力がClaude Opus 4.6とほぼ同等（SWE-Bench 80.2%）でコスト1/20
+  - **既存プロジェクト（sugawara-ai）との分離**: sugawara-aiはClaude Opus（Antigravity）を継続。TOPPA Inc.は完全に独立したAPIキー・インフラで稼働。互いに影響しない
+  - **実行基盤**: GCP Cloud Functions + Cloud Scheduler で1-2時間おきに自動セッション実行
+  - **Antigravity Claude Opusは使わない**: 既存プロジェクトへの影響を避けるため
