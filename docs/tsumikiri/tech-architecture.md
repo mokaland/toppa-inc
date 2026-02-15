@@ -1,20 +1,17 @@
-# ツミキリ（Tsumikiri）技術アーキテクチャ設計書
 
-> 作成者: CTO マルコ・ロッシ
-> 日付: 2026-02-15
-> ステータス: ドラフト
+# ツミキリ — 技術アーキテクチャ設計書
+
+- **作成者**: CTO マルコ・ロッシ
+- **日付**: 2026-02-15
+- **ステータス**: v1.0 策定完了
 
 ## 1. 概要
 
-本ドキュメントは、中小企業向け事務作業自動化AI「ツミキリ」の技術アーキテクチャを定義するものです。Q1計画で定められたMVP（Minimum Viable Product）の実現を目的とします。
-
-**関連ドキュメント:**
-- [TOPPA Inc. 技術方針書](docs/tech-direction.md)
-- [ツミキリ MVP実装計画](docs/implementation-plan.md)
+本ドキュメントは、TOPPA Inc.の最初のプロダクト「ツミキリ」の技術アーキテクチャを定義するものです。全社技術方針書 (`docs/tech-direction.md`) を基礎とし、ツミキリ固有の要件を反映しています。Founding Engineer カルロス・メンデス作成の `docs/implementation-plan.md` をレビューし、その内容を正式なアーキテクチャとして承認・統合しています。
 
 ## 2. システム構成図
 
-全体構成は、全社技術方針に基づき、Cloudflareを中心としたサーバーレスアーキテクチャを採用します。
+ツミキリのアーキテクチャは、全社技術方針に基づき、Cloudflareのエッジコンピューティングを最大限に活用し、高速かつスケーラブルなサービスを提供します。
 
 ```mermaid
 graph TD
@@ -22,148 +19,148 @@ graph TD
         A[ブラウザ<br>(React SPA)]
     end
 
-    subgraph "Cloudflare"
-        B[Cloudflare Pages<br>(Frontend Hosting)]
-        C[Cloudflare Workers<br>(Backend API / Hono)]
+    subgraph "Cloudflare Edge"
+        B[Cloudflare Pages<br>(静的ホスティング)]
+        C[Cloudflare Workers<br>(Hono API)]
     end
 
-    subgraph "Supabase (IaaS)"
+    subgraph "BaaS (Supabase)"
         D[Supabase Auth<br>(認証)]
-        E[Supabase DB<br>(PostgreSQL)]
-        F[Supabase Storage<br>(ファイルストレージ)]
+        E[Supabase DB<br>(PostgreSQL + RLS)]
+        F[Supabase Storage<br>(ファイルアップロード)]
     end
 
-    subgraph "外部AIサービス"
-        G[AI Provider API<br>(OpenAI / Anthropic / Google)]
+    subgraph "AI Providers"
+        G[OpenAI / Anthropic / Google]
     end
 
-    A -- HTTPS --> B
-    A -- APIリクエスト --> C
-    C -- 認証 --> D
-    C -- DBアクセス --> E
-    C -- ファイル操作 --> F
-    C -- AIリクエスト<br>(BYOK/マネージド) --> G
+    A -- "Webサイトアクセス" --> B
+    A -- "APIリクエスト<br>(/api/*)" --> C
+    C -- "認証" --> D
+    C -- "DBアクセス" --> E
+    C -- "ファイル操作" --> F
+    C -- "AIリクエスト<br>(BYOK or Managed)" --> G
 ```
 
-## 3. データベース設計
+## 3. 技術スタック
 
-Founding Engineer カルロス・メンデスによる実装計画のDBスキーマ案を承認し、正式な設計として採用します。
+全社技術方針書 (`docs/tech-direction.md`) に記載の技術スタックを全面的に採用します。
 
-### ER図
+| カテゴリ | 技術 | 備考 |
+|---|---|---|
+| フロントエンド | React 19, TypeScript, Vite, Tailwind CSS | 全社方針通り |
+| バックエンド | Cloudflare Workers, Hono | 全社方針通り |
+| データベース | Supabase (PostgreSQL) | 全社方針通り |
+| 認証 | Supabase Auth | 全社方針通り |
+| ファイルストレージ | Supabase Storage | レポート機能のファイルアップロード用 |
+| AI | OpenAI, Anthropic, Google | BYOK方式を主軸とする |
+| CI/CD | GitHub Actions, Cloudflare Wrangler | 全社方針通り |
+
+## 4. データモデル
+
+Founding Engineerが設計したスキーマを承認し、ユーザーごとのAPIキーを管理する `user_settings` テーブルを追加します。
 
 ```mermaid
 erDiagram
-    "auth.users" {
-        UUID id PK
+    users ||--o{ chat_messages : "has"
+    users ||--o{ reports : "has"
+    users ||--o{ documents : "has"
+    users ||--o{ user_settings : "has"
+
+    users {
+        UUID id PK "auth.users"
+        string email
     }
 
-    "chat_messages" {
-        UUID id PK
-        UUID user_id FK
-        VARCHAR role
-        TEXT content
-        TIMESTAMPTZ created_at
-    }
-
-    "reports" {
+    chat_messages {
         UUID id PK
         UUID user_id FK
-        VARCHAR title
-        TEXT file_url
-        TEXT prompt
-        TEXT result
-        VARCHAR status
-        TIMESTAMPTZ created_at
+        string role
+        text content
+        timestamp created_at
     }
 
-    "documents" {
+    reports {
         UUID id PK
         UUID user_id FK
-        VARCHAR template_id
-        JSONB input_data
-        TEXT generated_content
-        VARCHAR status
-        TIMESTAMPTZ created_at
+        string title
+        text file_url
+        text prompt
+        text result
+        string status
+        timestamp created_at
     }
 
-    "user_settings" {
+    documents {
+        UUID id PK
+        UUID user_id FK
+        string template_id
+        jsonb input_data
+        text generated_content
+        string status
+        timestamp created_at
+    }
+
+    user_settings {
         UUID user_id PK, FK
-        TEXT encrypted_api_key
-        TIMESTAMPTZ updated_at
+        text encrypted_openai_api_key
+        text encrypted_anthropic_api_key
+        text encrypted_google_api_key
+        timestamp updated_at
     }
-
-    "auth.users" ||--o{ "chat_messages" : "has"
-    "auth.users" ||--o{ "reports" : "has"
-    "auth.users" ||--o{ "documents" : "has"
-    "auth.users" ||--o{ "user_settings" : "has"
-
 ```
 
-### テーブル定義
+## 5. API設計
 
-| テーブル名 | 用途 | RLS |
+Founding Engineerの提案を基に、認証要件を明記したAPIエンドポイントを以下に定義します。
+
+| 機能 | エンドポイント | Method | 認証 | リクエストボディ | レスポンス |
+|---|---|---|---|---|---|
+| **チャット** | `/api/chat` | POST | 必須 | `{ "message": "string" }` | `{ "reply": "string" }` |
+| | `/api/chat/history` | GET | 必須 | - | `[{...}]` |
+| **レポート生成** | `/api/report/upload` | POST | 必須 | `FormData (file)` | `{ "file_url": "string" }` |
+| | `/api/report/generate` | POST | 必須 | `{ "file_url": "string", "prompt": "string" }` | `{ "report_id": "uuid" }` |
+| | `/api/reports/:id` | GET | 必須 | - | `{ "status": "string", "result": "string" }` |
+| | `/api/reports` | GET | 必須 | - | `[{...}]` |
+| **書類生成** | `/api/document/generate` | POST | 必須 | `{ "template_id": "string", "data": {} }` | `{ "document_id": "uuid" }` |
+| | `/api/documents/:id` | GET | 必須 | - | `{ "status": "string", "content": "string" }` |
+| | `/api/documents` | GET | 必須 | - | `[{...}]` |
+| **設定** | `/api/settings/api-keys` | PUT | 必須 | `{ "provider": "string", "api_key": "string" }` | `{ "success": true }` |
+
+## 6. BYOK (Bring Your Own Key) 実装方針
+
+ユーザーのAPIキーを安全に取り扱うため、以下の通り実装します。
+
+1.  **保存**: ユーザーが入力したAPIキーは、Cloudflare Workers上で環境変数として保持するユニークな暗号化キーを用いて暗号化し、`user_settings` テーブルの各カラムに保存します。
+2.  **利用**: ユーザーからのAIリクエスト時に、Workersは該当ユーザーの暗号化されたAPIキーをDBから取得し、メモリ上で復号してAIプロバイダーへのリクエストに使用します。
+3.  **破棄**: APIキーはリクエスト完了後、メモリ上から即座に破棄します。ログには一切記録しません。
+4.  **管理**: ユーザーはいつでもWeb UIから自分のAPIキーを更新・削除できます。
+
+## 7. セキュリティ要件
+
+全社技術方針に加え、ツミキリ固有のセキュリティ対策を徹底します。
+
+| 脅威 | 対策 | 担当 |
 |---|---|---|
-| `chat_messages` | チャット履歴を保存 | 有効 |
-| `reports` | AIレポート生成の履歴と結果を保存 | 有効 |
-| `documents` | テンプレートからの書類生成履歴を保存 | 有効 |
-| `user_settings` | ユーザー毎の設定（暗号化済みAPIキー等）を保存 | 有効 |
+| **SQLインジェクション** | Supabaseクライアントライブラリを使用し、直接のSQLクエリ発行を禁止。RLSを徹底。 | Engineer |
+| **XSS / CSRF** | Reactの標準機能とHonoのセキュリティミドルウェアで対策。 | Engineer |
+| **不正なファイルアップロード** | Supabase Storageのポリシーでファイル種別（CSV, XLSX）とサイズ（上限10MB）を制限。サーバーサイドで再度バリデーションを実施。 | Engineer |
+| **プロンプトインジェクション** | システムプロンプトに防御指示を組み込む。ユーザー入力を明確に区切り、LLMにコンテキストを誤認させない工夫を施す。 | Engineer / PdM |
+| **APIキー漏洩** | Cloudflare Workersのシークレット管理機能で暗号化キーを保護。DBへのアクセスはRLSで制限。 | CTO / Engineer |
+| **サービス妨害 (DoS)** | Cloudflareのレート制限機能をAPIエンドポイントに適用（例: 1分あたり10リクエスト）。 | CTO |
 
-## 4. API設計
+## 8. 開発・テスト戦略
 
-Founding Engineer カルロス・メンデスによる実装計画のAPIエンドポイント案をレビューし、以下の通り承認します。
+Founding Engineerが策定した `docs/implementation-plan.md` のテスト戦略を全面的に承認します。
 
-### 認証 (`/api/auth`)
-- Supabase Authを利用するため、バックエンドでの個別実装は不要。
+- **ユニットテスト**: Vitest (カバレッジ目標 80%)
+- **E2Eテスト**: Playwright (主要3フロー)
+- **レビュープロセス**: 全てのコードは、`feature/*` ブランチから `develop` ブランチへのPull Requestを通じて、CTO（マルコ・ロッシ）のレビューを必須とします。
 
-### チャット (`/api/chat`)
-| エンドポイント | Method | 機能 |
+## 9. 次のステップ
+
+| アクション | 担当 | 期限 |
 |---|---|---|
-| `/api/chat` | POST | チャットメッセージを送信し、AIの応答を取得する。 |
-| `/api/chat/history` | GET | ログインユーザーの会話履歴を取得する。 |
-
-### レポート生成 (`/api/report`)
-| エンドポイント | Method | 機能 |
-|---|---|---|
-| `/api/report/upload` | POST | 分析対象のファイル（CSV/Excel）をSupabase Storageにアップロードする。 |
-| `/api/report/generate` | POST | アップロード済みファイルと自然言語指示に基づき、レポート生成を非同期で要求する。 |
-| `/api/report/:id` | GET | 特定のレポートのステータスと結果を取得する。 |
-| `/api/report/list` | GET | ログインユーザーのレポート一覧を取得する。 |
-
-### 書類生成 (`/api/document`)
-| エンドポイント | Method | 機能 |
-|---|---|---|
-| `/api/document/generate` | POST | テンプレートIDと入力データに基づき、書類生成を非同期で要求する。 |
-| `/api/document/:id` | GET | 特定の書類のステータスと結果を取得する。 |
-| `/api/document/list` | GET | ログインユーザーの生成書類一覧を取得する。 |
-
-## 5. BYOK (Bring Your Own Key) 実装方針
-
-1.  **APIキーの保存**:
-    - ユーザーが入力した外部AIサービスのAPIキーは、Cloudflare Workersのシークレット機能を利用して暗号化し、`user_settings`テーブルの`encrypted_api_key`カラムに保存する。
-    - 暗号化・復号キーはWorkersのシークレットとして厳重に管理し、コードにはハードコードしない。
-2.  **APIキーの利用**:
-    - AI Providerへのリクエスト時に、該当ユーザーの暗号化済みAPIキーをデータベースから取得し、サーバーサイドで復号する。
-    - 復号したAPIキーをリクエストヘッダーに含めて外部APIを呼び出す。
-    - APIキーはリクエスト完了後、速やかにメモリから破棄する。ログには一切記録しない。
-3.  **セキュリティ**:
-    - フロントエンドとAPIサーバー間の通信はTLSで暗号化する。
-    - データベースに保存するAPIキーは必ず暗号化する。
-
-## 6. セキュリティ要件
-
-全社技術方針書に加え、ツミキリ独自の要件を以下に定める。
-
-| 項目 | 要件 | 実装方法 |
-|---|---|---|
-| **データ分離** | ユーザーは自身のデータ（チャット履歴、レポート等）にのみアクセス可能であること。 | SupabaseのRow Level Security (RLS) を全テーブルで有効化する。 |
-| **ファイルアップロード** | 不正なファイル形式やサイズの大きいファイルのアップロードを防止すること。 | Cloudflare Workersでファイル形式（CSV, XLSX）とサイズ（上限10MB）を検証する。 |
-| **APIキー保護** | ユーザーのAPIキーが漏洩しないこと。 | 上記「BYOK実装方針」に従い、暗号化して保存し、利用後は即時破棄する。 |
-| **レート制限** | APIエンドポイントへの過剰なリクエストを防止すること。 | Cloudflareのレート制限機能を利用し、ユーザー毎・IPアドレス毎のアクセス頻度を制限する（例: 1分あたり60リクエスト）。 |
-
-## 7. 次のステップ
-
-| タスク | 担当 | 期限 |
-|---|---|---|
-| 本設計書に基づくバックエンドAPIのプロトタイプ実装 | カルロス・メンデス | 2026-02-18 |
-| 本設計書に関するレビューとフィードバック | CEO 高橋レン | 2026-02-16 |
-| セキュリティ要件チェックリストの作成 | マルコ・ロッシ | 2026-02-17 |
+| PdMの仕様書 (`mvp-spec.md`) との技術的整合性確認 | CTO (マルコ) | 2026-02-16 |
+| 認証機能の実装開始 | Engineer (カルロス) | 2026-02-16 |
+| APIの OpenAPI (Swagger) 定義作成 | CTO (マルコ) | 2026-02-17 |
