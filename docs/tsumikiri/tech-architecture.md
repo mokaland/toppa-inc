@@ -2,143 +2,130 @@
 
 > 作成: CTO マルコ・ロッシ
 > 日付: 2026-02-15
-> ステータス: ドラフト
+> ステータス: 設計中
 
 ## 1. システム構成図
 
-ツミキリのシステムは、Cloudflareのエッジコンピューティングを最大限に活用し、高速かつスケーラブルな構成とする。フロントエンドとバックエンドの分離、そしてAIプロバイダとの連携を明確にする。
+ツミキリMVPのシステム構成は、既存の技術方針書 `docs/tech-direction.md` をベースとし、Cloudflare Pages/Workers、Supabase、AI Provider APIを核とする。ユーザー認証はSupabase Authを利用し、BYOK方式で複数のAIプロバイダーをサポートする。
 
 ```mermaid
 graph TD
-    A[ユーザー (ブラウザ)] -- HTTPSリクエスト --> B(Cloudflare Pages);
-    B -- APIリクエスト (HTTPS) --> C(Cloudflare Workers);
-    C -- 認証/データ操作 (HTTPS) --> D(Supabase);
-    D -- PostgreSQL/Auth/Storage --> C;
-    C -- AIリクエスト (HTTPS) --> E(AI Provider API);
-    E -- OpenAI/Anthropic/Google --> C;
-    C -- AI応答/データ --> B;
-    B -- UI表示 --> A;
+    A[ユーザー (ブラウザ)] -- HTTPS --> B(Cloudflare Pages)
+    B -- Fetch API --> C(Cloudflare Workers)
+    C -- gRPC/HTTPS --> D(Supabase)
+    C -- HTTPS --> E(AI Provider API)
 
-    subgraph Cloudflare Platform
-        B(フロントエンド: React SPA);
-        C(バックエンドAPI: Hono on Workers);
+    subgraph Cloudflare Pages (Frontend)
+        B
     end
 
-    subgraph Supabase (データベース & 認証)
-        D;
+    subgraph Cloudflare Workers (Backend API)
+        C
+        C --- F{認証ミドルウェア}
+        F --- G[APIエンドポイント]
+        G --- H(チャット機能)
+        G --- I(レポート生成機能)
+        G --- J(テンプレート書類生成機能)
+    end
+
+    subgraph Supabase (DB & Auth)
+        D
+        D --- K[PostgreSQL DB]
+        D --- L[Auth (ユーザー管理)]
+        D --- M[Storage (ファイル保存)]
     end
 
     subgraph AI Providers
-        E;
+        E[OpenAI / Anthropic / Google]
     end
+
+    H -- 会話履歴保存/取得 --> K
+    H -- BYOK/マネージドAIリクエスト --> E
+
+    I -- ファイル一時保存 --> M
+    I -- レポート履歴保存/取得 --> K
+    I -- データ分析/レポート生成リクエスト --> E
+
+    J -- 生成書類保存/取得 --> K
+    J -- テンプレート入力/生成リクエスト --> E
+
+    L -- 認証情報 --> C
+    K -- データ読み書き --> C
+    M -- ファイルアップロード/ダウンロード --> C
 ```
 
-## 2. API設計
+## 2. API設計（エンドポイント一覧）
 
-Cloudflare Workers (Hono) で以下のAPIエンドポイントを提供する。認証はSupabase AuthによるJWT認証を必須とする。
+Cloudflare Workers (Hono) を用いて以下のRESTful APIエンドポイントを提供する。
 
-| エンドポイント | Method | 機能 | リクエストボディ (例) | レスポンスボディ (例) | 認証 |
+| エンドポイント | Method | 機能 | リクエストボディ例 | レスポンスボディ例 | 備考 |
 |---|---|---|---|---|---|
-| `/api/auth/login` | POST | ユーザーログイン | `{ "email": "user@example.com", "password": "password" }` | `{ "accessToken": "jwt_token", "user": { "id": "uuid" } }` | 不要 |
-| `/api/auth/signup` | POST | ユーザー登録 | `{ "email": "user@example.com", "password": "password" }` | `{ "accessToken": "jwt_token", "user": { "id": "uuid" } }` | 不要 |
-| `/api/chat` | POST | チャットメッセージ送信・AI応答取得 | `{ "message": "先月の売上を教えて", "sessionId": "optional_uuid" }` | `{ "response": "string", "sessionId": "uuid" }` | 必須 |
-| `/api/chat/history` | GET | 会話履歴取得 | なし | `[{"role": "user/assistant", "content": "string", "created_at": "timestamp"}]` | 必須 |
-| `/api/chat/history/:sessionId` | GET | 特定セッションの履歴取得 | なし | `[{"role": "user/assistant", "content": "string", "created_at": "timestamp"}]` | 必須 |
-| `/api/report/upload` | POST | ファイルアップロード (CSV/Excel) | `multipart/form-data` | `{ "fileUrl": "string", "fileName": "string" }` | 必須 |
-| `/api/report/generate` | POST | レポート生成要求 | `{ "fileUrl": "string", "prompt": "売上データを分析して" }` | `{ "reportId": "uuid", "status": "pending" }` | 必須 |
-| `/api/report/:id` | GET | レポート結果取得 | なし | `{ "id": "uuid", "title": "string", "result": "string", "status": "completed/pending" }` | 必須 |
-| `/api/report/list` | GET | レポート一覧取得 | なし | `[{"id": "uuid", "title": "string", "created_at": "timestamp"}]` | 必須 |
-| `/api/document/generate` | POST | 書類生成要求 | `{ "templateId": "estimate", "inputData": { "company": "〇〇株式会社", "item": "AIコンサルティング", "amount": 100000 } }` | `{ "documentId": "uuid", "status": "pending" }` | 必須 |
-| `/api/document/:id` | GET | 生成済み書類取得 | なし | `{ "id": "uuid", "templateName": "string", "generatedContent": "string", "status": "completed/pending" }` | 必須 |
-| `/api/user/settings` | GET | ユーザー設定取得 | なし | `{ "apiKeyConfigured": true }` | 必須 |
-| `/api/user/settings` | PUT | ユーザー設定更新 (APIキー登録等) | `{ "openaiApiKey": "sk-...", "anthropicApiKey": "sk-..." }` | `{ "status": "success" }` | 必須 |
+| `/auth/signup` | POST | ユーザー登録 | `{ "email": "user@example.com", "password": "password" }` | `{ "user": { "id": "uuid", "email": "user@example.com" } }` | Supabase Auth利用 |
+| `/auth/login` | POST | ログイン | `{ "email": "user@example.com", "password": "password" }` | `{ "access_token": "jwt", "refresh_token": "jwt" }` | Supabase Auth利用 |
+| `/chat` | POST | チャット送信・AI応答取得 | `{ "message": "先月の売上を教えてください" }` | `{ "response": "先月の売上はXX円です。", "history_id": "uuid" }` | 会話履歴保存 |
+| `/chat/history` | GET | 会話履歴取得 | (なし) | `[ { "id": "uuid", "role": "user", "content": "...", "created_at": "..." } ]` | ユーザーごとの履歴 |
+| `/report/upload` | POST | ファイルアップロード | `FormData (file: File)` | `{ "file_url": "supabase_storage_url" }` | Supabase Storageへ保存 |
+| `/report/generate` | POST | レポート生成要求 | `{ "file_url": "...", "prompt": "売上分析レポートを作成してください" }` | `{ "report_id": "uuid", "status": "pending" }` | 非同期処理 |
+| `/report/:id` | GET | レポート結果取得 | (なし) | `{ "id": "uuid", "title": "...", "result": "...", "status": "completed" }` | ステータス更新 |
+| `/documents/generate` | POST | 書類生成要求 | `{ "template_id": "estimate", "data": { "company_name": "...", "items": [...] } }` | `{ "document_id": "uuid", "status": "pending" }` | 非同期処理 |
+| `/documents/:id` | GET | 書類結果取得 | (なし) | `{ "id": "uuid", "template_name": "...", "generated_content": "...", "status": "completed" }` | ステータス更新 |
+| `/user/settings` | GET | ユーザー設定取得 | (なし) | `{ "api_keys": { "openai": "...", "anthropic": "..." } }` | BYOKキー管理 |
+| `/user/settings` | PUT | ユーザー設定更新 | `{ "api_keys": { "openai": "sk-...", "anthropic": "sk-..." } }` | `{ "message": "Settings updated" }` | BYOKキー登録/更新 |
 
-## 3. BYOK (Bring Your Own Key) 実装方針
+## 3. BYOK実装方針
 
-ユーザーは自身のAIプロバイダAPIキーを利用できるBYOK方式をサポートする。
+ユーザーが自身のAIプロバイダーAPIキー（BYOK: Bring Your Own Key）を使用できる機能は、TOPPA Inc.の重要な差別化要因である。
 
-- **APIキー登録**: ユーザーは設定画面からOpenAI/Anthropic/GoogleなどのAPIキーを登録する。
-- **保存**: 登録されたAPIキーはCloudflare Workersで受け取り、Supabaseの`user_settings`テーブルに暗号化（AES-256）して保存する。ユーザーごとに分離し、RLSで保護する。
-- **利用**: AIリクエスト時、Cloudflare WorkersはSupabaseからユーザーのAPIキーを複合して取得し、AI Provider APIに渡す。
-- **セキュリティ**: APIキーはサーバーサイドで一時的に利用し、ログには記録せず、リクエスト処理完了後すぐにメモリから破棄する。
+### 3-1. キーの保存と管理
+
+- **暗号化**: ユーザーから提供されたAPIキーは、SupabaseのSecrets管理機能、またはWorkers KVに暗号化して保存する。SupabaseのPostgreSQLに保存する場合は、PostgreSQLの暗号化機能（PGP暗号化など）を利用し、アプリケーションレベルでの二重暗号化も検討する。
+- **ユーザー分離**: 各ユーザーのAPIキーは完全に分離し、他のユーザーからはアクセスできないようにする。Supabase RLSを厳密に適用する。
+- **環境変数**: Cloudflare Workersの環境変数としてAPIキーを直接保存することはしない。ユーザーキーはDBまたはKVに保存し、リクエスト時に取得する。
+
+### 3-2. 利用フロー
+
+1.  **ユーザー登録/ログイン**: Supabase Authを通じてユーザー認証を行う。
+2.  **APIキー登録**: ユーザーは設定画面で自身のAIプロバイダーAPIキーを登録する。この際、キーは暗号化されて保存される。
+3.  **AIリクエスト**: ユーザーがAI機能を利用する際、Cloudflare WorkersはユーザーIDに基づき暗号化されたAPIキーをDB/KVから取得し、復号化してAIプロバイダーへのリクエストヘッダーに含めて送信する。
+4.  **一時利用**: APIキーはリクエスト処理中のみメモリ上に保持され、リクエスト完了後には速やかに破棄される。ログにはAPIキーを一切記録しない。
+
+### 3-3. セキュリティ対策
+
+-   **レート制限**: 各ユーザーからのAIリクエストに対してレート制限を設ける（例: 1分あたり10リクエスト）。これにより、APIキーの悪用や過剰な利用を防ぐ。
+-   **不正利用検知**: 短時間に異常な数のリクエストや、通常とは異なるパターンでの利用があった場合、自動的にアラートを発し、キーの一時停止などの対応を検討する。
+-   **キーの検証**: 登録時にAPIキーが有効なものであるか、AIプロバイダーへの簡単な疎通確認を行う。
 
 ## 4. セキュリティ要件
 
-TOPPA Inc.の全社技術方針に加え、ツミキリ固有の要件を定義する。
+`docs/tech-direction.md` のセキュリティ方針をツミキリプロダクトに特化して具体化する。
 
-- **データ保護**:
-    - 通信はTLS 1.3 (Cloudflare標準) で常に暗号化する。
-    - Supabaseに保存されるデータはAES-256で暗号化する。
-    - APIキーなどの機密情報はCloudflare Workersのシークレット管理機能を利用し、環境変数として安全に管理する。
-- **認証・認可**:
-    - ユーザー認証はSupabase Authを利用し、メールアドレスとパスワード、またはソーシャルログインをサポートする。
-    - データベースのアクセス制御にはRow Level Security (RLS) を適用し、各ユーザーが自身のデータのみにアクセスできるよう徹底する。
-    - APIエンドポイントはすべて認証済みユーザーからのリクエストのみを許可する。
-- **BYOKセキュリティ**:
-    - ユーザーのAPIキーは暗号化して保存し、サーバーサイドでの一時利用に限定する。
-    - AIプロバイダへのリクエスト時にのみメモリ上で複合し、利用後は即座にメモリから破棄する。
-    - APIキーがログに記録されることを厳しく禁止する。
-- **不正利用対策**:
-    - 各APIエンドポイントにはレート制限を設ける (例: 1分あたり10リクエスト)。
-    - 不審なAPI利用パターンを検知するための監視メカニズムを将来的に導入する。
-- **依存ライブラリ**: 使用する全てのサードパーティライブラリは定期的に脆弱性スキャンを実施する。
+### 4-1. データ保護
 
-## 5. データモデル設計
+-   **通信の暗号化**: フロントエンドとCloudflare Workers間、Cloudflare WorkersとSupabase/AI Provider間は全てTLS 1.3による暗号化通信を強制する。これはCloudflareの標準機能により提供される。
+-   **保存データの暗号化**:
+    -   Supabase PostgreSQLに保存される顧客データ（チャット履歴、レポート内容、生成書類、ユーザー設定など）は、Supabaseの標準機能であるAES-256暗号化が適用される。
+    -   ユーザーのBYOK APIキーは、前述の通りアプリケーションレベルでの追加暗号化を検討する。
+-   **ファイルストレージ**: Supabase Storageにアップロードされるファイル（CSV/Excelなど）も暗号化して保存され、RLSにより適切なアクセス制御を行う。
 
-Supabase (PostgreSQL) に以下のテーブルを定義する。全てのテーブルに`user_id`を設け、RLSを適用する。
+### 4-2. 認証・認可
 
-### `chat_messages` (会話履歴テーブル)
+-   **ユーザー認証**: Supabase Authを全面的に採用し、メールアドレス/パスワード認証および将来的にはソーシャルログイン（Google/GitHubなど）に対応する。
+-   **セッション管理**: JWT (JSON Web Token) を利用したステートレスなセッション管理を行う。JWTはHTTPS経由で安全に伝送され、有効期限を設定する。
+-   **認可 (RLS)**: SupabaseのRow Level Security (RLS) を厳格に適用する。全てのテーブルにおいて、ユーザーは自身のデータのみにアクセスできるようポリシーを定義する。
+    -   `chat_messages`: `auth.uid() = user_id`
+    -   `reports`: `auth.uid() = user_id`
+    -   `documents`: `auth.uid() = user_id`
+    -   `user_settings`: `auth.uid() = user_id`
+-   **APIキーの認可**: ユーザーが登録したBYOKキーは、そのユーザーのリクエスト処理のみに利用され、他のユーザーのリクエストには使用されないことを保証する。
 
-| カラム名 | データ型 | 制約 | 説明 |
-|---|---|---|---|
-| `id` | `UUID` | `PRIMARY KEY`, `DEFAULT gen_random_uuid()` | メッセージID |
-| `user_id` | `UUID` | `REFERENCES auth.users(id) ON DELETE CASCADE` | ユーザーID |
-| `role` | `VARCHAR(10)` | `NOT NULL`, `CHECK (role IN ('user', 'assistant', 'system'))` | 発言者 (ユーザー/AI/システム) |
-| `content` | `TEXT` | `NOT NULL` | メッセージ内容 |
-| `created_at` | `TIMESTAMPTZ` | `DEFAULT NOW()` | 作成日時 |
-| `session_id` | `UUID` | `DEFAULT gen_random_uuid()` | 会話セッションID (新規追加) |
+### 4-3. Cloudflare Workersのセキュリティ
 
-### `reports` (レポート生成履歴テーブル)
+-   **シークレット管理**: APIキーやデータベース接続情報などの機密情報は、Cloudflare WorkersのSecrets機能、またはWorkers KVに安全に保存し、コードに直接ハードコーディングしない。
+-   **入力検証**: 全てのAPIエンドポイントにおいて、ユーザーからの入力データに対して厳格なバリデーションを行う。SQLインジェクション、XSS、CSRFなどの脆弱性から保護する。
+-   **依存ライブラリ**: 使用する全てのサードパーティライブラリは、定期的に脆弱性スキャンを行い、最新のセキュリティパッチが適用されたバージョンを使用する。
 
-| カラム名 | データ型 | 制約 | 説明 |
-|---|---|---|---|
-| `id` | `UUID` | `PRIMARY KEY`, `DEFAULT gen_random_uuid()` | レポートID |
-| `user_id` | `UUID` | `REFERENCES auth.users(id) ON DELETE CASCADE` | ユーザーID |
-| `title` | `VARCHAR(255)` | `NOT NULL` | レポートタイトル |
-| `file_name` | `VARCHAR(255)` | | アップロードファイル名 |
-| `file_url` | `TEXT` | | Supabase Storage上のファイルURL |
-| `prompt` | `TEXT` | `NOT NULL` | ユーザーの分析指示プロンプト |
-| `result` | `TEXT` | | AI生成レポート結果 (Markdown) |
-| `status` | `VARCHAR(20)` | `DEFAULT 'pending'` | 処理ステータス ('pending', 'completed', 'failed') |
-| `created_at` | `TIMESTAMPTZ` | `DEFAULT NOW()` | 作成日時 |
-| `completed_at` | `TIMESTAMPTZ` | | 処理完了日時 |
+### 4-4. AI利用のセキュリティ
 
-### `documents` (生成済み書類テーブル)
-
-| カラム名 | データ型 | 制約 | 説明 |
-|---|---|---|---|
-| `id` | `UUID` | `PRIMARY KEY`, `DEFAULT gen_random_uuid()` | 書類ID |
-| `user_id` | `UUID` | `REFERENCES auth.users(id) ON DELETE CASCADE` | ユーザーID |
-| `template_id` | `VARCHAR(50)` | `NOT NULL` | 使用テンプレートID (例: 'estimate') |
-| `template_name` | `VARCHAR(100)` | `NOT NULL` | テンプレート名 (例: '見積書') |
-| `input_data` | `JSONB` | `NOT NULL` | ユーザー入力データ (JSON形式) |
-| `generated_content` | `TEXT` | | AI生成書類内容 (Markdown/PDF URL) |
-| `status` | `VARCHAR(20)` | `DEFAULT 'pending'` | 処理ステータス ('pending', 'completed', 'failed') |
-| `created_at` | `TIMESTAMPTZ` | `DEFAULT NOW()` | 作成日時 |
-| `completed_at` | `TIMESTAMPTZ` | | 処理完了日時 |
-
-### `user_settings` (ユーザー設定テーブル)
-
-| カラム名 | データ型 | 制約 | 説明 |
-|---|---|---|---|
-| `user_id` | `UUID` | `PRIMARY KEY`, `REFERENCES auth.users(id) ON DELETE CASCADE` | ユーザーID |
-| `openai_api_key_encrypted` | `TEXT` | | OpenAI APIキー (暗号化) |
-| `anthropic_api_key_encrypted` | `TEXT` | | Anthropic APIキー (暗号化) |
-| `google_api_key_encrypted` | `TEXT` | | Google APIキー (暗号化) |
-| `updated_at` | `TIMESTAMPTZ` | `DEFAULT NOW()` | 最終更新日時 |
-
-## 6. 今後のアクション
-
-- Founding Engineerのカルロス・メンデスは本設計書に基づき実装を進める。
-- CTOは本設計書をレビューし、必要に応じて更新する。
-- 2026-02-21までに本設計書を確定させる。
+-   **プロンプトインジェクション対策**: AIへのプロンプトは、ユーザー入力を直接渡すのではなく、システムプロンプトと組み合わせて安全な形式で渡す。悪意のあるプロンプトによる情報漏洩や誤動作を防ぐ。
+-   **AI応答の検証**: AIからの応答はそのままユーザーに表示するのではなく、内容を検証し、不適切な情報や個人情報が含まれていないかチェックする機構を設ける。
+-   **データ保持ポリシー**: AIプロバイダーに送信されるデータについて、各プロバイダーのデータ保持ポリシーを確認し、機密性の高いデータが不必要に保存されないように配慮する。特にBYOK利用時は、ユーザー自身がプロバイダーのポリシーを理解していることを前提とする。
