@@ -1,8 +1,8 @@
 # ツミキリ（Tsumikiri）— MVPプロダクト仕様書
 
 > 作成: PdM キム・スジン
-> 日付: 2026-02-15
-> ステータス: 骨子作成完了、詳細化進行中
+> 日付: 2026-02-16
+> ステータス: ユーザーストーリー追加、詳細化進行中
 > レビュー: CEO 高橋レン
 
 ## 1. プロダクト概要
@@ -48,6 +48,7 @@
 1. 経営者として、「この契約書の注意点を教えて」と相談したい。弁護士に聞くほどでもないが不安だから。
 2. 経営者として、スマホからでも操作したい。現場や移動中に使うため。
 3. 経営者として、過去の会話履歴を参照したい。以前の相談内容を忘れてしまった場合でも、文脈を維持した会話を続けるため。
+4. 経営者として、AIアシスタントに特定の業務フローを学習させたい。RPAのように定型業務を自動化するため。
 
 #### 画面遷移
 `ログイン → ダッシュボード → チャット`
@@ -64,33 +65,34 @@ CREATE TABLE chat_messages (
     content TEXT NOT NULL,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+ALTER TABLE chat_messages ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users can view own messages"
+    ON chat_messages FOR SELECT
+    USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can insert own messages"
+    ON chat_messages FOR INSERT
+    WITH CHECK (auth.uid() = user_id);
 ```
 
-#### APIエンドポイント
-- `/api/chat` (POST): チャットメッセージを送信し、AIの応答を取得する。
-- `/api/chat/history` (GET): ユーザーの会話履歴を取得する。
-- `/api/chat/history/:sessionId` (GET): 特定のセッションIDに紐づく会話履歴を取得する。
+### 機能2: AIレポート生成（MVP実装中）
 
-#### 非機能要件
-- レスポンス: チャット応答3秒以内
-
-### 機能2: AIレポート生成（詳細化）
-
-CSVまたはExcelファイルをアップロードし、自然言語で指示するだけでAIがデータを分析し、日本語のレポートを生成する。生成されたレポートはPDF/Markdown形式でダウンロード可能。
+CSVまたはExcelファイルをアップロードし、自然言語で指示することでAIがデータを分析し、日本語のレポートを生成する。Founding Engineerにより実装が進行中。
 
 #### ユーザーストーリー
-1. 経営者として、CSVをアップロードして「先月の売上を部門別にまとめて」と言いたい。事務員に頼む手間を省くため。
-2. 経営者として、AIが生成したレポートをPDFでダウンロードしたい。社内会議や取引先への説明資料として活用するため。
-3. 経営者として、レポート生成の指示を自然言語で柔軟に行いたい。複雑な操作を覚えることなく、直感的に利用するため。
+1. 経営者として、CSVをアップロードして「今月の売上まとめて」と言いたい。事務員に頼む手間を省くため。
+2. 経営者として、AIが生成したレポートをPDFでダウンロードしたい。会議資料として利用するため。
+3. 経営者として、レポート生成時にデータのフィルタリング条件を指定したい。特定の期間や部門のデータだけを分析するため。
+4. 経営者として、生成されたレポートを他のメンバーと共有したい。経営判断に役立てるため。
+5. 経営者として、レポートのグラフの種類を選択したい。視覚的に分かりやすくするため。
 
 #### 画面遷移
 `ログイン → ダッシュボード → レポート生成`
-- レポート生成画面:
-    - ファイルアップロードエリア (CSV/Excel)
-    - 自然言語での指示入力エリア
-    - 「レポート生成」ボタン
-    - 生成されたレポートのプレビュー表示エリア
-    - 「PDFダウンロード」「Markdownダウンロード」ボタン
+- ファイルアップロード画面: CSV/Excelファイルをドラッグ＆ドロップまたは選択してアップロード。
+- 指示入力画面: 自然言語でレポートの分析指示を入力。フィルタリング条件などもここで指定。
+- レポート表示画面: AIが生成したレポートが表示され、PDF/Markdown形式でダウンロードできるボタンがある。
 
 #### データモデル（Supabase PostgreSQL: `reports`テーブル）
 
@@ -105,60 +107,74 @@ CREATE TABLE reports (
     result TEXT,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+ALTER TABLE reports ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users can view own reports"
+    ON reports FOR SELECT
+    USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can insert own reports"
+    ON reports FOR INSERT
+    WITH CHECK (auth.uid() = user_id);
 ```
 
-#### APIエンドポイント
-- `/api/report/generate` (POST): アップロードされたファイルとプロンプトに基づき、AIレポートを生成する。
-- `/api/report/history` (GET): ユーザーのレポート生成履歴を取得する。
-- `/api/report/:reportId` (GET): 特定のレポートIDに紐づくレポート詳細を取得する。
+### 機能3: テンプレート書類生成（MVP設計中）
 
-#### 非機能要件
-- 対応ファイル形式: CSV, Excel (.xlsx, .xls)
-- 処理速度: ファイルサイズと内容によるが、数分以内にレポートを生成
-
-### 機能3: テンプレート書類生成（詳細化）
-
-見積書・請求書・お礼状などのテンプレートを用意し、自然言語またはフォームで情報を入力するだけでAIがテンプレートに情報を流し込み、書類を生成する。生成された書類はPDF形式で出力可能。
+見積書・請求書・お礼状などのテンプレートを用意し、自然言語で指示することでAIがテンプレートに情報を流し込み、書類を生成する。
 
 #### ユーザーストーリー
-1. 経営者として、「○○建設さんへ、屋根修理の見積書を作って。金額は35万円」と言いたい。書類作成に30分かかるのを3分にするため。
-2. 経営者として、AIが作成した書類をプレビューしてから確定したい。間違いがあると信用問題だから。
-3. 経営者として、よく使う書類のテンプレートを簡単に選択したい。効率的に書類を作成するため。
+1. 経営者として、「○○社に見積書を送って」と言いたい。書類作成に30分かかるのを3分にするため。
+2. 経営者として、AIが作った書類をプレビューしてから確定したい。間違いがあると信用問題だから。
+3. 経営者として、テンプレートにない項目も自由に追加して書類を作成したい。柔軟な対応が必要だから。
+4. 経営者として、作成した書類をメールで直接送信したい。送信の手間を省くため。
+5. 経営者として、作成した書類の履歴を管理したい。過去の取引内容を確認するため。
+6. 経営者として、請求書の支払い期日を自動で設定したい。未払いを防ぐため。
 
 #### 画面遷移
 `ログイン → ダッシュボード → 書類生成`
-- 書類生成画面:
-    - テンプレート選択エリア (見積書、請求書、お礼状などのリスト)
-    - 情報入力エリア (自然言語またはフォーム形式)
-    - 「書類生成」ボタン
-    - 生成された書類のプレビュー表示エリア
-    - 「PDF出力」ボタン (Phase 2でメール添付送信機能を追加)
+- テンプレート選択画面: 見積書、請求書、お礼状などのテンプレート一覧から選択。
+- 情報入力画面: 自然言語またはフォームで、書類に記載する情報を入力。
+- プレビュー画面: AIが生成した書類の内容を確認。修正が必要な場合は編集可能。
+- 出力・送信画面: PDF出力ボタン、またはメール送信ボタン（Phase 2）。
 
-#### データモデル（Supabase PostgreSQL: `documents`テーブル）
+#### データモデル（Supabase PostgreSQL: `documents`テーブル, `templates`テーブル）
 
 ```sql
 CREATE TABLE documents (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
-    type VARCHAR(50) NOT NULL, -- 見積書, 請求書, お礼状など
+    template_id UUID REFERENCES templates(id),
     title VARCHAR(255) NOT NULL,
-    content TEXT, -- 生成された書類の内容
-    file_url TEXT, -- 生成されたPDFのURLなど
+    content TEXT NOT NULL,
+    generated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE templates (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name VARCHAR(255) NOT NULL,
+    type VARCHAR(50) NOT NULL, -- 'invoice', 'quotation', 'letter' etc.
+    content_template TEXT NOT NULL,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+ALTER TABLE documents ENABLE ROW LEVEL SECURITY;
+ALTER TABLE templates ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users can view own documents"
+    ON documents FOR SELECT
+    USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can insert own documents"
+    ON documents FOR INSERT
+    WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "Users can view templates"
+    ON templates FOR SELECT
+    USING (true); -- テンプレートは全ユーザーが閲覧可能
 ```
 
-#### APIエンドポイント
-- `/api/document/templates` (GET): 利用可能な書類テンプレートの一覧を取得する。
-- `/api/document/generate` (POST): 選択されたテンプレートと入力情報に基づき、AIが書類を生成する。
-- `/api/document/history` (GET): ユーザーの書類生成履歴を取得する。
-- `/api/document/:documentId` (GET): 特定の書類IDに紐づく書類詳細を取得する。
-
-#### 非機能要件
-- テンプレートの拡張性: 新しい書類テンプレートを容易に追加できること
-- プレビューの正確性: 生成された書類のプレビューが最終出力と一致すること
-
-## 5. 全体的な非機能要件
+## 5. 非機能要件
 
 - レスポンス: チャット応答3秒以内
 - 可用性: 99.5%以上
