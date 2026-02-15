@@ -1,185 +1,208 @@
-作成者: CTO マルコ・ロッシ
-日付: 2026-02-15
-ステータス: 策定中
+# ツミキリ MVP 技術アーキテクチャ設計書
+
+> 作成: CTO マルコ・ロッシ
+> 日付: 2026-02-15
+> ステータス: 設計完了
+> レビュー: CEO 高橋レン
 
 ## 1. 概要
 
-本ドキュメントは、ツミキリMVPの技術アーキテクチャ設計を定義する。TOPPA Inc.全体の技術方針書 (`docs/tech-direction.md`) に基づき、Founding Engineerによる実装計画 (`docs/implementation-plan.md`) および進捗 (`docs/implementation-progress.md`) を反映させる。
+本ドキュメントは、TOPPA Inc.の最初のプロダクト「ツミキリ」のMVP（Minimum Viable Product）における技術アーキテクチャ設計を定義する。CEOのQ1計画におけるタスク2「技術アーキテクチャ設計」に対応し、Founding Engineerの`docs/implementation-plan.md`と`docs/implementation-progress.md`に記載された実装計画および進捗を統合・詳細化する。
 
 ## 2. システム構成図
 
-ツミキリMVPのシステム構成は、TOPPA Inc.全体の技術方針書 (`docs/tech-direction.md`) に準拠し、以下のように設計する。
+ツミキリのシステムは、Cloudflareのエッジコンピューティングを最大限に活用し、高速かつスケーラブルな構成とする。
 
 ```mermaid
-graph TD
-    A[ユーザー (ブラウザ)] -- HTTPS --> B[Cloudflare Pages (React SPA)]
-    B -- APIリクエスト --> C[Cloudflare Workers (Hono API)]
-    C -- 認証/DB操作 --> D[Supabase (PostgreSQL, Auth, Storage)]
-    C -- AIリクエスト (BYOK/マネージド) --> E[AI Provider API (OpenAI/Anthropic/Google)]
+graph LR
+    subgraph Frontend (Cloudflare Pages)
+        A[ブラウザ / モバイルアプリ (React + TypeScript)]
+    end
+
+    subgraph Backend (Cloudflare Workers)
+        B[API Gateway (Hono)]
+        B -- Supabase Auth JWT認証 --> C[認証ミドルウェア]
+        C -- APIキー管理 --> D[ユーザー設定DB (Supabase)]
+        C -- 会話履歴 --> E[チャット履歴DB (Supabase)]
+        C -- レポート履歴 --> F[レポート履歴DB (Supabase)]
+        C -- 書類履歴 --> G[書類履歴DB (Supabase)]
+    end
+
+    subgraph AI Service
+        H[AI Provider API (OpenAI/Anthropic/Google)]
+    end
+
+    subgraph Database (Supabase)
+        I[PostgreSQL (Auth / DB / Storage)]
+    end
+
+    A -- HTTPS --> B
+    B -- AIリクエスト (BYOK/マネージド) --> H
+    B -- データ永続化 --> I
+    H -- 応答 --> B
+    I -- データ --> B
 ```
 
 ## 3. 技術スタック
 
-TOPPA Inc.の技術方針 (`docs/tech-direction.md`) およびFounding Engineerの実装進捗 (`docs/implementation-progress.md`) に基づき、以下の技術スタックを採用する。
+TOPPA Inc.全体の技術方針（`docs/tech-direction.md`）に基づき、ツミキリMVPでは以下の技術スタックを採用する。
 
-- **フロントエンド**: React 19 + TypeScript + Vite, Tailwind CSS, Zustand, React Router
-- **バックエンド**: Cloudflare Workers, Hono
-- **データベース**: Supabase (PostgreSQL)
-- **AI**: OpenAI API / Anthropic API / Google API (BYOK/マネージド方式)
-- **ホスティング**: Cloudflare Pages (FE), Cloudflare Workers (BE)
-- **CI/CD**: GitHub Actions, Cloudflare Wrangler
+### フロントエンド
+- **React 19** + **TypeScript** + **Vite**: 高速な開発と型安全性を確保。
+- **Tailwind CSS**: ユーティリティファーストでのUI開発。
+- **Zustand**: 軽量な状態管理。
+- **React Router**: SPAのルーティング。
+
+### バックエンド
+- **Cloudflare Workers**: エッジコンピューティングによる低レイテンシ。
+- **Hono**: 軽量Webフレームワーク。
+- **Supabase**: 認証、データベース、ストレージ機能を提供。
+
+### AI
+- **BYOK方式**: ユーザーのAPIキーを使用。OpenAI (GPT-4o), Anthropic (Claude Sonnet 4.5), Google (Gemini 2.5 Pro)をサポート。
+- **マネージド方式**: TOPPA Inc.のAPIキーを使用（Proプラン向け）。
+
+### ホスティング
+- **Cloudflare Pages**: フロントエンド。
+- **Cloudflare Workers**: APIサーバー。
+
+### CI/CD
+- **GitHub Actions**: Lint, Type Check, テスト。
+- **Cloudflare Wrangler**: 自動デプロイ。
 
 ## 4. API設計
 
-Founding Engineerの実装計画 (`docs/implementation-plan.md`) に基づき、以下のAPIエンドポイントを設計する。
+Founding Engineerの提案を基に、以下のAPIエンドポイントを定義し、認証・認可、エラーハンドリングを強化する。
 
-### 4-1. 認証関連API (Supabase Auth経由)
+### 認証・認可
 
-- `/auth/v1/signup`: ユーザー登録
-- `/auth/v1/signin`: ログイン
-- `/auth/v1/signout`: ログアウト
-- ...その他Supabase Authが提供するエンドポイント
+- 全てのAPIエンドポイントはSupabase AuthによるJWT認証を必須とする。
+- 認証ミドルウェアで`Authorization: Bearer <JWT>`ヘッダーを検証し、`auth.uid()`でユーザーIDを取得する。
+- ユーザーIDに基づき、RLS（Row Level Security）によってデータへのアクセスを制限する。
 
-### 4-2. チャットアシスタントAPI
+### エンドポイント一覧
 
-| エンドポイント | Method | 機能 | 備考 |
-|---------------|--------|------|------|
-| `/api/chat` | POST | チャット送信・AI応答取得 | 会話履歴の保存・取得を含む |
-| `/api/chat/history` | GET | 全会話履歴取得 | ユーザーIDに基づくフィルタリング |
-| `/api/chat/history/:sessionId` | GET | 特定セッションの履歴取得 | セッションIDに基づくフィルタリング |
+| エンドポイント | Method | 機能 | リクエストボディ | レスポンスボディ | 備考 |
+|---------------|--------|------|------------------|------------------|------|
+| `/api/auth/signup` | POST | ユーザー登録 | `{ email, password }` | `{ user: { id, email } }` | Supabase Authラッパー |
+| `/api/auth/signin` | POST | ログイン | `{ email, password }` | `{ user: { id, email }, session: { access_token } }` | Supabase Authラッパー |
+| `/api/auth/signout` | POST | ログアウト | N/A | `{ message: "Logged out" }` | Supabase Authラッパー |
+| `/api/chat` | POST | チャット送信・AI応答取得 | `{ message: string, history?: ChatMessage[] }` | `{ reply: string, messageId: string }` | 会話履歴はDBに保存 |
+| `/api/chat/history` | GET | 会話履歴取得 | N/A | `{ history: ChatMessage[] }` | 認証済みユーザーの履歴のみ |
+| `/api/report/generate` | POST | レポート生成 | `{ file: File, prompt: string }` | `{ reportId: string, status: 'processing' | 'completed' }` | ファイルはSupabase Storageに一時保存 |
+| `/api/report/:reportId` | GET | 特定レポート取得 | N/A | `{ report: Report }` | ユーザー自身のレポートのみ |
+| `/api/document/generate` | POST | 書類生成 | `{ templateId: string, data: Record<string, any> }` | `{ documentId: string, status: 'processing' | 'completed' }` | |
+| `/api/document/:documentId` | GET | 特定書類取得 | N/A | `{ document: Document }` | ユーザー自身の書類のみ |
+| `/api/user/settings` | GET | ユーザー設定取得 | N/A | `{ settings: UserSettings }` | BYOKキー情報など |
+| `/api/user/settings` | PUT | ユーザー設定更新 | `{ openaiApiKey?: string, anthropicApiKey?: string, googleApiKey?: string }` | `{ message: "Settings updated" }` | BYOKキーの更新 |
 
-### 4-3. AIレポート生成API
+### エラーハンドリング
 
-| エンドポイント | Method | 機能 | 備考 |
-|---------------|--------|------|------|
-| `/api/report/generate` | POST | CSV/ExcelファイルアップロードとAIレポート生成 | ファイル一時保存、AI分析、レポート生成 |
-| `/api/report/history` | GET | レポート生成履歴取得 | ユーザーIDに基づくフィルタリング |
-| `/api/report/:reportId` | GET | 特定レポート詳細取得 | レポートIDに基づくフィルタリング |
-| `/api/report/:reportId/download` | GET | レポートダウンロード (PDF/Markdown) | 生成済みレポートのダウンロード |
+- 全てのAPIは標準的なHTTPステータスコード（200 OK, 201 Created, 400 Bad Request, 401 Unauthorized, 403 Forbidden, 404 Not Found, 500 Internal Server Error）を返す。
+- エラーレスポンスはJSON形式で `{ error: { code: string, message: string } }` の構造とする。
+- サーバーサイドでの予期せぬエラーは詳細なログをCloudflare LogpushでS3に集約し、監視体制を構築する。
 
-### 4-4. テンプレート書類生成API
+## 5. データベース設計
 
-| エンドポイント | Method | 機能 | 備考 |
-|---------------|--------|------|------|
-| `/api/document/generate` | POST | テンプレートに基づく書類生成 | 指定テンプレートと入力データから書類生成 |
-| `/api/document/templates` | GET | 利用可能なテンプレート一覧取得 | ユーザーが利用できるテンプレート |
-| `/api/document/history` | GET | 書類生成履歴取得 | ユーザーIDに基づくフィルタリング |
-| `/api/document/:documentId` | GET | 特定書類詳細取得 | 書類IDに基づくフィルタリング |
-| `/api/document/:documentId/download` | GET | 書類ダウンロード (PDF/Docx) | 生成済み書類のダウンロード |
+Founding Engineerの提案を基に、以下のテーブルスキーマとRLS（Row Level Security）を適用し、データ堅牢性とセキュリティを確保する。
 
-## 5. データベース設計 (Supabase PostgreSQL)
+### Supabase PostgreSQL
 
-Founding Engineerの進捗 (`docs/implementation-progress.md`) を参照し、以下のテーブル構成を採用する。
+| テーブル名 | 用途 | RLS | 主なカラム | 備考 |
+|------------|------|-----|------------|------|
+| `chat_messages` | チャット履歴 | 有効 | `id (UUID)`, `user_id (UUID)`, `role (VARCHAR)`, `content (TEXT)`, `created_at (TIMESTAMPTZ)` | ユーザーの会話履歴を保存。`user_id`でRLSを適用し、他ユーザーからのアクセスを禁止。 |
+| `reports` | レポート履歴 | 有効 | `id (UUID)`, `user_id (UUID)`, `title (VARCHAR)`, `file_name (VARCHAR)`, `file_url (TEXT)`, `prompt (TEXT)`, `result (TEXT)`, `created_at (TIMESTAMPTZ)` | 生成されたレポートのメタデータと結果を保存。`user_id`でRLSを適用。 |
+| `documents` | 生成済み書類 | 有効 | `id (UUID)`, `user_id (UUID)`, `title (VARCHAR)`, `template_id (UUID)`, `data (JSONB)`, `file_url (TEXT)`, `created_at (TIMESTAMPTZ)` | AIが生成した書類のメタデータと保存場所。`user_id`でRLSを適用。 |
+| `user_settings` | ユーザー設定 | 有効 | `user_id (UUID)`, `openai_api_key (TEXT)`, `anthropic_api_key (TEXT)`, `google_api_key (TEXT)`, `updated_at (TIMESTAMPTZ)` | ユーザーごとのBYOK用APIキーなどを保存。APIキーは暗号化して保存し、RLSを適用。 |
 
-### 5-1. chat_messages テーブル
+### Row Level Security (RLS)
 
-- **用途**: ユーザーとAIの会話履歴を保存
-- **スキーマ**:
-  ```sql
-  CREATE TABLE chat_messages (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
-      role VARCHAR(10) NOT NULL CHECK (role IN ('user', 'assistant', 'system')),
-      content TEXT NOT NULL,
-      created_at TIMESTAMPTZ DEFAULT NOW()
-  );
-  ```
-- **RLS**: 有効化 (`docs/implementation-plan.md` に準拠)
-  - `Users can view own messages`
-  - `Users can insert own messages`
+- 全てのユーザーデータ関連テーブルにはRLSを有効化する。
+- ポリシーは`auth.uid() = user_id`を基本とし、ユーザーは自身のデータのみ閲覧・更新・削除可能とする。
+- 例: `chat_messages`テーブルの場合
+    ```sql
+    ALTER TABLE chat_messages ENABLE ROW LEVEL SECURITY;
+    CREATE POLICY "Users can view own messages" ON chat_messages FOR SELECT USING (auth.uid() = user_id);
+    CREATE POLICY "Users can insert own messages" ON chat_messages FOR INSERT WITH CHECK (auth.uid() = user_id);
+    CREATE POLICY "Users can update own messages" ON chat_messages FOR UPDATE USING (auth.uid() = user_id);
+    CREATE POLICY "Users can delete own messages" ON chat_messages FOR DELETE USING (auth.uid() = user_id);
+    ```
 
-### 5-2. reports テーブル
+### インデックスと外部キー
 
-- **用途**: AIレポート生成履歴を保存
-- **スキーマ**: (`docs/implementation-plan.md` を参照し、Founding Engineerがまだ作成していない部分を補完)
-  ```sql
-  CREATE TABLE reports (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
-      title VARCHAR(255) NOT NULL,
-      file_name VARCHAR(255),
-      file_url TEXT,
-      prompt TEXT NOT NULL,
-      result TEXT,
-      format VARCHAR(50), -- PDF, Markdownなど
-      created_at TIMESTAMPTZ DEFAULT NOW()
-  );
-  ```
-- **RLS**: 有効化 (ユーザーは自身のレポートのみ閲覧・操作可能)
+- `user_id`カラムには必ずインデックスを付与し、クエリパフォーマンスを向上させる。
+- 関連テーブル間には外部キー制約を設定し、データの整合性を保つ。
 
-### 5-3. documents テーブル
+## 6. BYOK (Bring Your Own Key) 実装方針
 
-- **用途**: 生成済み書類の履歴を保存
-- **スキーマ**: (`docs/implementation-plan.md` を参照し、Founding Engineerがまだ作成していない部分を補完)
-  ```sql
-  CREATE TABLE documents (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
-      template_name VARCHAR(255) NOT NULL,
-      input_data JSONB NOT NULL,
-      output_url TEXT,
-      format VARCHAR(50), -- PDF, Docxなど
-      created_at TIMESTAMPTZ DEFAULT NOW()
-  );
-  ```
-- **RLS**: 有効化 (ユーザーは自身の書類のみ閲覧・操作可能)
+BYOK方式は、ユーザーが自身のAIプロバイダーAPIキーを利用することで、TOPPA Inc.のAPI利用料を抑え、柔軟な利用を可能にする。セキュリティを最優先し、以下の原則で実装する。
 
-### 5-4. user_settings テーブル
+### 6-1. APIキーの保存
 
-- **用途**: ユーザーごとの設定、特にBYOK用のAPIキーを保存
-- **スキーマ**: (`docs/implementation-progress.md` に記載あり、詳細化)
-  ```sql
-  CREATE TABLE user_settings (
-      user_id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
-      openai_api_key TEXT,
-      anthropic_api_key TEXT,
-      google_api_key TEXT,
-      updated_at TIMESTAMPTZ DEFAULT NOW()
-  );
-  ```
-- **RLS**: 有効化 (ユーザーは自身の設定のみ閲覧・更新可能)
-- **注意**: APIキーは暗号化して保存し、厳重に管理すること。
+- ユーザーから提供されたAPIキーは、`user_settings`テーブルに保存する。
+- **保存時の暗号化**: データベースに保存する際は、AES-256などの強力な暗号化方式を用いて暗号化する。キーはCloudflare Workersのシークレットとして安全に管理する。
+- **RLSによるアクセス制御**: `user_settings`テーブルにはRLSを適用し、ユーザー自身しか自身のAPIキーを参照・更新できないようにする。
 
-## 6. BYOK実装方針
+### 6-2. APIキーの利用フロー
 
-TOPPA Inc.の技術方針 (`docs/tech-direction.md`) に準拠し、ユーザーのAPIキー (BYOK: Bring Your Own Key) を利用する方式を実装する。
+1.  ユーザーがフロントエンドからBYOK用APIキーを登録・更新する。
+2.  APIキーは暗号化されてSupabaseの`user_settings`テーブルに保存される。
+3.  ユーザーがAI機能を利用する際、Cloudflare WorkersのAPIエンドポイントを呼び出す。
+4.  Workers側でユーザーのJWTを検証し、`user_id`を取得する。
+5.  `user_id`に基づき、`user_settings`テーブルから暗号化されたAPIキーを読み出す。
+6.  読み出したAPIキーを複合化し、AIプロバイダーAPIへのリクエストヘッダーに含める。
+7.  AIプロバイダーAPIからの応答を受け取る。
+8.  **メモリからの破棄**: APIキーはリクエスト処理完了後、Workersのメモリから直ちに破棄される。ログには一切記録しない。
 
-- **保存**: `user_settings` テーブルに暗号化して保存。
-- **利用**: Cloudflare Workers上で、ユーザーからのリクエスト時に復号し、AIプロバイダーへのリクエストに利用。リクエスト完了後、メモリから即座に破棄。
-- **ログ**: ユーザーのAPIキーは一切ログに記録しない。
-- **バリデーション**: 保存時、および利用時にAPIキーの有効性を確認する。
+### 6-3. セキュリティ対策
+
+- **通信の暗号化**: 全ての通信はTLS 1.3で暗号化される（Cloudflare標準）。
+- **最小権限の原則**: Workersは必要なデータベース操作とAIプロバイダーへのアクセスのみを許可する。
+- **ログの除外**: APIキーや機密データは、Workersのログ、Supabaseのログ、AIプロバイダーのログなど、いかなるログにも記録しない。
 
 ## 7. セキュリティ要件
 
-TOPPA Inc.の技術方針 (`docs/tech-direction.md`) およびFounding Engineerの進捗 (`docs/implementation-progress.md`) を踏まえ、以下のセキュリティ要件を定義する。
+TOPPA Inc.全体のセキュリティ方針に加え、ツミキリ固有の要件を定義する。
 
-- **データ保護**:
-    - 通信: 全ての通信はTLS 1.3で暗号化（Cloudflare標準）。
-    - 保存データ: SupabaseのAES-256暗号化を適用。
-    - APIキー: Cloudflare Workersのシークレット管理機能と`user_settings`テーブルでの暗号化保存を組み合わせる。
-- **認証・認可**:
-    - Supabase Authによるユーザー認証（メール/ソーシャルログイン）。
-    - 全てのテーブルにRow Level Security (RLS) を有効化し、ユーザーは自身のデータのみアクセス可能とする。
-    - APIエンドポイントへのアクセスは認証済みユーザーに限定し、`user_id`に基づく認可を行うミドルウェアをCloudflare Workersに実装する。
-- **BYOKセキュリティ**:
-    - ユーザーのAPIキーはサーバーサイドで一時的に利用し、ログには記録しない。
-    - APIキーは暗号化して保存し、復号は必要最小限の期間のみ行う。
-- **脆弱性対策**:
-    - OWASP Top 10を考慮したWebアプリケーション脆弱性対策を実施。
-    - 定期的なセキュリティスキャンとコードレビューを実施。
-- **監査ログ**: 重要な操作（APIキーの更新、データ削除など）については監査ログを記録する。
+### 7-1. データ保護
 
-## 8. パフォーマンス要件
+- **通信の暗号化**: 全てのクライアント-サーバー間通信はTLS 1.3で暗号化する。
+- **保存データの暗号化**: Supabaseに保存されるユーザーデータ（特にAPIキー、個人情報、機密性の高いレポート内容など）は、データベースレベルまたはアプリケーションレベルで暗号化を施す。Supabaseのディスク暗号化（AES-256）を活用する。
+- **バックアップとリカバリ**: Supabaseの自動バックアップ機能を活用し、定期的なデータバックアップと障害発生時のリカバリ手順を確立する。
 
-TOPPA Inc.の技術方針 (`docs/tech-direction.md`) に準拠。
+### 7-2. 認証・認可
 
-- 初期ロード: 2秒以内（LCP）
-- チャット応答: 3秒以内（AI応答含む）
-- レポート生成: 10秒以内（CSV 1000行まで）
-- 書類生成: 5秒以内
+- **多要素認証（MFA）**: 将来的にSupabaseのMFA機能を導入し、アカウントセキュリティを強化する。
+- **パスワードポリシー**: 強固なパスワードポリシー（最小文字数、複雑性要件）をSupabase Authで設定する。
+- **セッション管理**: JWTの有効期限を適切に設定し、定期的なトークン更新メカニズムを実装する。
 
-## 9. 今後の検討事項
+### 7-3. APIキー管理
 
-- **エラーハンドリング**: APIエラーの共通処理とユーザーへの適切なフィードバックメカニズムの設計。
-- **レートリミット**: AIプロバイダーAPIへのリクエスト、および自社APIへのリクエストに対するレートリミット導入。
-- **モニタリング**: Cloudflare Workers, Supabase, AIプロバイダーの利用状況とパフォーマンスを監視する仕組みの構築。
+- **Cloudflare Workers Secrets**: TOPPA Inc.自身のAIプロバイダーAPIキーはCloudflare Workersのシークレットとして安全に管理し、ソースコードには含めない。
+- **ユーザーBYOKキーの管理**: 「6. BYOK実装方針」に記載の通り、暗号化保存と利用時のみ複合化、メモリからの即時破棄を徹底する。
+
+### 7-4. 脆弱性対策
+
+- **入力値検証**: 全てのAPIエンドポイントで、入力値に対する厳格な検証を行い、SQLインジェクション、XSS、CSRFなどの脆弱性を防止する。
+- **依存ライブラリの管理**: 定期的に依存ライブラリの脆弱性スキャンを実施し、既知の脆弱性を持つライブラリは速やかにアップデートまたは代替を検討する。
+- **セキュリティヘッダー**: Cloudflare Pages/Workersで適切なセキュリティヘッダー（CSP, HSTSなど）を設定する。
+
+## 8. CI/CD (継続的インテグレーション / 継続的デリバリー)
+
+`docs/tech-direction.md`に準拠し、以下のCI/CDパイプラインを構築する。
+
+- **GitHub Actions**:
+    - `develop`ブランチへのPR作成時に、Lint (ESLint + Prettier)、Type Check (TypeScript)、ユニットテスト (Vitest) を自動実行する。
+    - 全てのチェックをパスし、CTOのレビュー後にマージを許可する。
+- **Cloudflare Wrangler**:
+    - `main`ブランチへのマージをトリガーとして、Cloudflare Pages（フロントエンド）とCloudflare Workers（バックエンド）への自動デプロイを実行する。
+    - デプロイの成功・失敗はSlack通知で関係者に共有する。
+
+## 9. テスト戦略
+
+`docs/tech-direction.md`に準拠し、以下のテスト戦略を適用する。
+
+- **ユニットテスト**: Vitestを用いて、各機能単位でのテスト（カバレッジ80%目標）を実施する。特にビジネスロジック、データ変換、APIクライアント部分を重点的にテストする。
+- **E2Eテスト**: Playwrightを用いて、主要なユーザーフロー（例: ユーザー登録→ログイン→チャット利用→レポート生成）のE2Eテストを実装する。最低3つの主要フローをカバーする。
+- **AI応答テスト**: モックAPIを用いてAIプロバイダーからの応答をシミュレートし、AI連携部分の動作検証を行う。AIの応答内容自体の品質評価は、別途UXレビューや手動テストで実施する。
+- **セキュリティテスト**: 脆弱性スキャンツール（例: Dependabot, Snyk）をCI/CDに組み込み、依存ライブラリの既知の脆弱性を自動検出する。
