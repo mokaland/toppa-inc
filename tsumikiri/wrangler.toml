@@ -1,10 +1,17 @@
 name = "tsumikiri-worker"
 main = "api/index.ts"
-compatibility_date = "2023-01-01"
+compatibility_date = "2024-01-01"
 
 [vars]
 SUPABASE_URL = ""
 SUPABASE_ANON_KEY = ""
-OPENAI_API_KEY = ""
-ANTHROPIC_API_KEY = ""
-GOOGLE_API_KEY = ""
+JWT_SECRET = ""
+
+[[d1_databases]]
+binding = "DB"
+database_name = "tsumikiri_db"
+database_id = "YOUR_D1_DATABASE_ID"
+
+[site]
+bucket = "./dist"
+entry-point = "worker"
