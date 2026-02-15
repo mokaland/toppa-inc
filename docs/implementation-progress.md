@@ -2,11 +2,11 @@
 
 > 作成者: Founding Engineer カルロス・メンデス
 > 日付: 2026-02-15
-> ステータス: チャットUIとAPI基盤の骨子実装完了
+> ステータス: チャット機能結合テスト進行中
 
 ## 1. 本日の完了タスク
 
-実装計画に基づき、Supabase認証機能の実装を完了し、認証UIとCloudflare Workers APIの骨子を作成しました。本日、チャットUIの実装とChat APIのモック応答を実装しました。
+実装計画に基づき、Supabase認証機能の実装を完了し、認証UIとCloudflare Workers APIの骨子を作成しました。本日、チャットUIの実装とChat APIのモック応答を実装しました。さらに、チャット機能の結合テストの骨子を実装しました。
 
 | タスクID | タスク内容 | 担当 | 期限 | ステータス |
 |----------|-----------|------|------|------------|
@@ -30,6 +30,7 @@
 | CHAT-004-2 | tsumikiri/api/index.tsにchatApiをマウント | カルロス | 2/16 | 完了 |
 | CHAT-003 | チャットUI実装（認証後画面含む） | カルロス | 2/17 | 完了 |
 | CHAT-004 | Cloudflare Workers Chat API実装（AI連携含む） | カルロス | 2/17 | 完了 |
+| CHAT-005-1 | tsumikiri/src/tests/chat.test.tsに結合テストの骨子を実装 | カルロス | 2/15 | 完了 |
 
 ## 2. Supabaseプロジェクト構成
 
@@ -84,8 +85,7 @@ main (本番環境)
 
 | タスクID | アクション | 担当 | 期限 | 前提条件 |
 |----------|------------|------|------|----------|
-| CHAT-004 | Cloudflare Workers Chat API実装（AI連携の本格実装） | カルロス | 2/17 | CHAT-004 (モック応答) 完了 |
-| CHAT-005 | チャット結合テスト | カルロス | 2/21 | CHAT-003, CHAT-004完了 |
+| CHAT-005 | チャット結合テスト（AI連携テスト含む） | カルロス | 2/21 | CHAT-003, CHAT-004完了 |
 
 ## 6. 技術的な詳細
 
@@ -93,13 +93,19 @@ main (本番環境)
 
 | カテゴリ | ライブラリ | バージョン | 用途 |
 |----------|------------|------------|------|
-| フロントエンド | React | 19.0.0-rc.0 | UI構築 |
-| | TypeScript | 5.x | 型安全なJavaScript |
-| | Vite | 5.x | 開発サーバー、バンドラー |
-| | Tailwind CSS | 3.x | CSSフレームワーク |
-| | Zustand | 4.x | 状態管理 |
-| | React Router | 6.x | ルーティング |
-| バックエンド | Cloudflare Workers | latest | エッジコンピューティング |
-| | Hono | 3.x | Webフレームワーク |
-| データベース | Supabase JS | 2.x | DBクライアント、認証 |
-| AI | OpenAI JS | 4.x | OpenAI APIクライアント (今回追加) |
+| Frontend | React | 19.x | UIフレームワーク |
+| Frontend | TypeScript | 5.x | 型定義言語 |
+| Frontend | Vite | 5.x | ビルドツール |
+| Frontend | Tailwind CSS | 3.x | CSSフレームワーク |
+| Frontend | Zustand | 4.x | 状態管理ライブラリ |
+| Frontend | React Router | 6.x | ルーティング |
+| Backend | Cloudflare Workers | 4.x | エッジコンピューティング |
+| Backend | Hono | 3.x | Webフレームワーク |
+| Database | Supabase | 1.x | BaaS (Auth, DB, Storage) |
+| AI       | OpenAI SDK | 4.x | OpenAI APIクライアント |
+| AI       | Anthropic SDK | 0.x | Anthropic APIクライアント |
+| AI       | Google Generative AI | 0.x | Google Gemini APIクライアント |
+| Test     | Vitest | 1.x | ユニットテストフレームワーク |
+| Test     | Playwright | 1.x | E2Eテストフレームワーク |
+| Utility  | papaparse | 5.x | CSV解析 |
+| Utility  | xlsx | 0.x | Excel解析 |
