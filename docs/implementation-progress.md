@@ -29,7 +29,7 @@
 | CHAT-004-1 | tsumikiri/api/chat.tsにCloudflare Workers chat APIの骨子を実装 | カルロス | 2/16 | 完了 |
 | CHAT-004-2 | tsumikiri/api/index.tsにchatApiをマウント | カルロス | 2/16 | 完了 |
 | CHAT-003 | チャットUI実装（認証後画面含む） | カルロス | 2/17 | 完了 |
-| CHAT-004 | Cloudflare Workers Chat API実装（AI連携含む） | カルロス | 2/17 | 進行中 (モック応答まで完了) |
+| CHAT-004 | Cloudflare Workers Chat API実装（AI連携含む） | カルロス | 2/17 | 完了 |
 
 ## 2. Supabaseプロジェクト構成
 
@@ -92,29 +92,14 @@ main (本番環境)
 ### 実装に使用する主要ライブラリ
 
 | カテゴリ | ライブラリ | バージョン | 用途 |
-|----------|-----------|------------|------|
-| UI | React | 19.x | フロントエンド |
-| 状態管理 | Zustand | 5.x | 状態管理 |
-| API Client | Hono | 4.x | Cloudflare Workersフレームワーク |
-| DB Client | Supabase JS | 2.x | Supabaseとの連携 |
-| ルーティング | React Router DOM | 6.x | フロントエンドルーティング |
-| スタイリング | Tailwind CSS | 3.x | CSSフレームワーク |
-| ビルドツール | Vite | 5.x | フロントエンド開発サーバー・バンドラー |
-| 型定義 | TypeScript | 5.x | 型安全な開発 |
-
-### 実装方針
-
-- **チャットUI**: ユーザーがメッセージを入力し、送信できるシンプルなUIを実装。Supabaseから会話履歴を取得し表示。
-- **Chat API**: Cloudflare Workers上でHonoを使用してAPIエンドポイントを構築。ユーザーからのメッセージを受け取り、Supabaseに保存。AIプロバイダー（モック）からの応答をユーザーに返す。
-- **認証**: Supabase Authを利用して、ユーザーの認証状態を管理。認証済みユーザーのみがチャット機能を利用できるように制御。
-
-### テスト方針
-
-- **ユニットテスト**: 各コンポーネントやAPIハンドラのロジックに対してVitestでユニットテストを実装。
-- **E2Eテスト**: Playwrightを用いて、認証フローからチャットの送受信までの一連のユーザー体験をテスト。
-- **AI応答テスト**: AIプロバイダーからの応答をモック化し、様々なシナリオでのAPIの挙動を確認。
-
-### 留意事項
-
-- AIプロバイダーとの実際の連携は、今後のタスクとして詳細設計・実装を進める。
-- エラーハンドリングやローディング状態のUIフィードバックは、MVPフェーズでは最小限とし、順次強化していく。
+|----------|------------|------------|------|
+| フロントエンド | React | 19.0.0-rc.0 | UI構築 |
+| | TypeScript | 5.x | 型安全なJavaScript |
+| | Vite | 5.x | 開発サーバー、バンドラー |
+| | Tailwind CSS | 3.x | CSSフレームワーク |
+| | Zustand | 4.x | 状態管理 |
+| | React Router | 6.x | ルーティング |
+| バックエンド | Cloudflare Workers | latest | エッジコンピューティング |
+| | Hono | 3.x | Webフレームワーク |
+| データベース | Supabase JS | 2.x | DBクライアント、認証 |
+| AI | OpenAI JS | 4.x | OpenAI APIクライアント (今回追加) |
