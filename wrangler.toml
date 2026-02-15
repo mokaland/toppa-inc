@@ -1,0 +1,44 @@
+name = "tsumikiri-api"
+main = "api/index.ts"
+compatibility_date = "2024-01-01"
+node_compat = true
+
+# 環境変数（シークレットはwrangler secret putで設定）
+[vars]
+APP_NAME = "ツミギリ"
+ENV = "development"
+
+# ============================================
+# 開発環境設定
+# ============================================
+[env.production]
+name = "tsumikiri-api-prod"
+
+[[env.production.kv_namespaces]]
+binding = "TSUMIKIRI_KV"
+id = "your-kv-namespace-id-prod"
+
+[[env.production.d1_databases]]
+binding = "TSUMIKIRI_DB"
+database_name = "tsumikiri-prod"
+database_id = "your-d1-database-id-prod"
+
+# ============================================
+# プレビュー環境設定
+# ============================================
+[env.preview]
+name = "tsumikiri-api-preview"
+
+[[env.preview.kv_namespaces]]
+binding = "TSUMIKIRI_KV"
+id = "your-kv-namespace-id-preview"
+
+# 注意: D1はpreview環境では使用不可（開発时会直接使用Supabase）
+
+# ============================================
+# Site設定（Cloudflare Pages用）
+# ============================================
+# Pages Functionsを使用する場合
+# [[sites]]
+# binding = "TSUMIKIRI_SITE"
+# bucket = "./dist"
