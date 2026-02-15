@@ -31,6 +31,9 @@
 | CHAT-003 | チャットUI実装（認証後画面含む） | カルロス | 2/17 | 完了 |
 | CHAT-004 | Cloudflare Workers Chat API実装（AI連携含む） | カルロス | 2/17 | 完了 |
 | CHAT-005-1 | tsumikiri/src/tests/chat.test.tsに結合テストの骨子を実装 | カルロス | 2/15 | 完了 |
+| CHAT-005-2 | tsumikiri/src/tests/chat.test.tsに認証済みユーザーのメッセージ送信・AI応答テストケースを実装 | カルロス | 2/15 | 完了 |
+| CHAT-005-3 | tsumikiri/src/tests/chat.test.tsに会話履歴の保存・取得テストケースを実装 | カルロス | 2/15 | 完了 |
+| CHAT-005-4 | tsumikiri/src/tests/chat.test.tsに未認証アクセス防止テストケースを実装 | カルロス | 2/15 | 完了 |
 
 ## 2. Supabaseプロジェクト構成
 
@@ -85,27 +88,24 @@ main (本番環境)
 
 | タスクID | アクション | 担当 | 期限 | 前提条件 |
 |----------|------------|------|------|----------|
-| CHAT-005 | チャット結合テスト（AI連携テスト含む） | カルロス | 2/21 | CHAT-003, CHAT-004完了 |
+| CHAT-005 | チャット結合テスト（AI連携テスト含む）の完了とテスト結果の検証 | カルロス | 2/21 | CHAT-003, CHAT-004完了 |
 
 ## 6. 技術的な詳細
 
 ### 実装に使用する主要ライブラリ
 
 | カテゴリ | ライブラリ | バージョン | 用途 |
-|----------|------------|------------|------|
-| Frontend | React | 19.x | UIフレームワーク |
-| Frontend | TypeScript | 5.x | 型定義言語 |
-| Frontend | Vite | 5.x | ビルドツール |
-| Frontend | Tailwind CSS | 3.x | CSSフレームワーク |
-| Frontend | Zustand | 4.x | 状態管理ライブラリ |
-| Frontend | React Router | 6.x | ルーティング |
-| Backend | Cloudflare Workers | 4.x | エッジコンピューティング |
-| Backend | Hono | 3.x | Webフレームワーク |
-| Database | Supabase | 1.x | BaaS (Auth, DB, Storage) |
-| AI       | OpenAI SDK | 4.x | OpenAI APIクライアント |
-| AI       | Anthropic SDK | 0.x | Anthropic APIクライアント |
-| AI       | Google Generative AI | 0.x | Google Gemini APIクライアント |
-| Test     | Vitest | 1.x | ユニットテストフレームワーク |
-| Test     | Playwright | 1.x | E2Eテストフレームワーク |
-| Utility  | papaparse | 5.x | CSV解析 |
-| Utility  | xlsx | 0.x | Excel解析 |
+|---|---|---|---|
+| フロントエンド | React | 19.x | UIコンポーネント |
+| | TypeScript | 5.x | 型安全な開発 |
+| | Vite | 5.x | 高速な開発サーバー、ビルドツール |
+| | Tailwind CSS | 3.x | ユーティリティファーストCSSフレームワーク |
+| | Zustand | 4.x | 軽量状態管理 |
+| | React Router | 6.x | クライアントサイドルーティング |
+| バックエンド | Cloudflare Workers | 4.x | エッジコンピューティング |
+| | Hono | 3.x | 軽量Webフレームワーク |
+| データベース | Supabase JS | 2.x | Supabaseクライアントライブラリ |
+| テスト | Vitest | 1.x | ユニット・結合テストフレームワーク |
+| | @hono/node-server/runtime | 1.x | Honoアプリケーションのテストユーティリティ |
+| | @supabase/supabase-js | 2.x | Supabaseクライアントライブラリ |
+| | openai | 4.x | OpenAI APIクライアント |
