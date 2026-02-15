@@ -1,39 +1,52 @@
-import { Hono } from 'hono'
-import { cors } from 'hono/cors'
-import { jwt } from 'hono/jwt'
 
-const app = new Hono()
+import { Hono } from 'hono';
+import { cors } from 'hono/cors';
+import { jwt } from 'hono/jwt';
+import { createClient } from '@supabase/supabase-js';
 
-app.use('*', cors())
+type Bindings = {
+  SUPABASE_URL: string;
+  SUPABASE_ANON_KEY: string;
+  JWT_SECRET: string; // JWTの検証に使用するシークレットキー
+};
 
-// JWT認証ミドルウェア (Supabase Authから取得したJWTを検証)
-app.use('/api/*', jwt({
-  secret: process.env.JWT_SECRET || '' // .env.example と wrangler.toml で定義
-}))
+const app = new Hono<{ Bindings: Bindings }>();
 
-app.get('/', (c) => {
-  return c.text('TOPPA Inc. Tsumikiri API')
-})
+app.use('*', cors());
 
-// 認証関連のエンドポイント（Supabase Authのコールバックなど）はJWTミドルウェアの対象外とする
-// 例: app.post('/auth/callback', async (c) => { ... })
+// Supabaseクライアントの初期化（Workers環境変数を使用）
+const getSupabaseClient = (env: Bindings) => {
+  return createClient(env.SUPABASE_URL, env.SUPABASE_ANON_KEY);
+};
 
-// チャットAPIのルーティングの骨子
-app.post('/api/chat', async (c) => {
-  // 認証済みのユーザーIDを取得
-  // const payload = c.get('jwtPayload')
-  // const userId = payload.sub
-  return c.json({ message: 'Chat API endpoint (WIP)' })
-})
+// 認証ミドルウェア
+app.use('/api/*', async (c, next) => {
+  const authHeader = c.req.header('Authorization');
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return c.json({ error: 'Unauthorized' }, 401);
+  }
 
-// レポートAPIのルーティングの骨子
-app.post('/api/report/generate', async (c) => {
-  return c.json({ message: 'Report API endpoint (WIP)' })
-})
+  const token = authHeader.split(' ')[1];
+  const supabase = getSupabaseClient(c.env);
 
-// ドキュメントAPIのルーティングの骨子
-app.post('/api/document/generate', async (c) => {
-  return c.json({ message: 'Document API endpoint (WIP)' })
-})
+  try {
+    const { data: { user }, error } = await supabase.auth.getUser(token);
+    if (error || !user) {
+      return c.json({ error: 'Invalid token' }, 401);
+    }
+    c.set('user', user); // ユーザー情報をコンテキストに保存
+    await next();
+  } catch (e) {
+    return c.json({ error: 'Authentication failed' }, 401);
+  }
+});
 
-export default app
+// 例: 保護されたルート
+app.get('/api/protected', (c) => {
+  const user = c.get('user');
+  return c.json({ message: `Hello, ${user.email}! This is a protected route.`, user });
+});
+
+app.get('/', (c) => c.text('Hello Hono!'));
+
+export default app;
