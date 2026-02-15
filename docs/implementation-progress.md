@@ -22,6 +22,8 @@
 | CHAT-002-6 | vite.config.ts作成 | カルロス | 2/15 | 完了 |
 | CHAT-002-7 | tsumikiri/src/lib/supabase.ts作成 | カルロス | 2/15 | 完了 |
 | CHAT-002-8 | tsumikiri/api/index.ts作成（認証ミドルウェアの骨子） | カルロス | 2/15 | 完了 |
+| CHAT-002-9 | tsumikiri/src/lib/supabase.tsにSupabaseクライアントと認証ヘルパー関数を実装 | カルロス | 2/15 | 完了 |
+| CHAT-002-10 | tsumikiri/api/index.tsにSupabase認証ミドルウェアを実装 | カルロス | 2/15 | 完了 |
 
 ## 2. Supabaseプロジェクト構成
 
@@ -76,7 +78,7 @@ main (本番環境)
 
 | タスクID | アクション | 担当 | 期限 | 前提条件 |
 |----------|------------|------|------|----------|
-| CHAT-002 | Supabase認証機能実装（完了） | カルロス | 2/16 | DBスキーマ作成完了 |
+| CHAT-002 | Supabase認証機能実装 | カルロス | 2/16 | 完了 |
 | CHAT-003 | チャットUI実装 | カルロス | 2/17 | 認証機能実装完了 |
 | CHAT-004 | Cloudflare Workers API基盤構築 | カルロス | 2/17 | Wrangler設定完了 |
 
