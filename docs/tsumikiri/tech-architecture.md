@@ -1,166 +1,144 @@
+# TOPPA Inc. — ツミキリ 技術アーキテクチャ設計
 
-# ツミキリ — 技術アーキテクチャ設計書
+> 作成: CTO マルコ・ロッシ
+> 日付: 2026-02-15
+> ステータス: ドラフト
 
-- **作成者**: CTO マルコ・ロッシ
-- **日付**: 2026-02-15
-- **ステータス**: v1.0 策定完了
+## 1. システム構成図
 
-## 1. 概要
-
-本ドキュメントは、TOPPA Inc.の最初のプロダクト「ツミキリ」の技術アーキテクチャを定義するものです。全社技術方針書 (`docs/tech-direction.md`) を基礎とし、ツミキリ固有の要件を反映しています。Founding Engineer カルロス・メンデス作成の `docs/implementation-plan.md` をレビューし、その内容を正式なアーキテクチャとして承認・統合しています。
-
-## 2. システム構成図
-
-ツミキリのアーキテクチャは、全社技術方針に基づき、Cloudflareのエッジコンピューティングを最大限に活用し、高速かつスケーラブルなサービスを提供します。
+ツミキリのシステムは、Cloudflareのエッジコンピューティングを最大限に活用し、高速かつスケーラブルな構成とする。フロントエンドとバックエンドの分離、そしてAIプロバイダとの連携を明確にする。
 
 ```mermaid
 graph TD
-    subgraph "ユーザー"
-        A[ブラウザ<br>(React SPA)]
+    A[ユーザー (ブラウザ)] -- HTTPSリクエスト --> B(Cloudflare Pages);
+    B -- APIリクエスト (HTTPS) --> C(Cloudflare Workers);
+    C -- 認証/データ操作 (HTTPS) --> D(Supabase);
+    D -- PostgreSQL/Auth/Storage --> C;
+    C -- AIリクエスト (HTTPS) --> E(AI Provider API);
+    E -- OpenAI/Anthropic/Google --> C;
+    C -- AI応答/データ --> B;
+    B -- UI表示 --> A;
+
+    subgraph Cloudflare Platform
+        B(フロントエンド: React SPA);
+        C(バックエンドAPI: Hono on Workers);
     end
 
-    subgraph "Cloudflare Edge"
-        B[Cloudflare Pages<br>(静的ホスティング)]
-        C[Cloudflare Workers<br>(Hono API)]
+    subgraph Supabase (データベース & 認証)
+        D;
     end
 
-    subgraph "BaaS (Supabase)"
-        D[Supabase Auth<br>(認証)]
-        E[Supabase DB<br>(PostgreSQL + RLS)]
-        F[Supabase Storage<br>(ファイルアップロード)]
+    subgraph AI Providers
+        E;
     end
-
-    subgraph "AI Providers"
-        G[OpenAI / Anthropic / Google]
-    end
-
-    A -- "Webサイトアクセス" --> B
-    A -- "APIリクエスト<br>(/api/*)" --> C
-    C -- "認証" --> D
-    C -- "DBアクセス" --> E
-    C -- "ファイル操作" --> F
-    C -- "AIリクエスト<br>(BYOK or Managed)" --> G
 ```
 
-## 3. 技術スタック
+## 2. API設計
 
-全社技術方針書 (`docs/tech-direction.md`) に記載の技術スタックを全面的に採用します。
+Cloudflare Workers (Hono) で以下のAPIエンドポイントを提供する。認証はSupabase AuthによるJWT認証を必須とする。
 
-| カテゴリ | 技術 | 備考 |
-|---|---|---|
-| フロントエンド | React 19, TypeScript, Vite, Tailwind CSS | 全社方針通り |
-| バックエンド | Cloudflare Workers, Hono | 全社方針通り |
-| データベース | Supabase (PostgreSQL) | 全社方針通り |
-| 認証 | Supabase Auth | 全社方針通り |
-| ファイルストレージ | Supabase Storage | レポート機能のファイルアップロード用 |
-| AI | OpenAI, Anthropic, Google | BYOK方式を主軸とする |
-| CI/CD | GitHub Actions, Cloudflare Wrangler | 全社方針通り |
-
-## 4. データモデル
-
-Founding Engineerが設計したスキーマを承認し、ユーザーごとのAPIキーを管理する `user_settings` テーブルを追加します。
-
-```mermaid
-erDiagram
-    users ||--o{ chat_messages : "has"
-    users ||--o{ reports : "has"
-    users ||--o{ documents : "has"
-    users ||--o{ user_settings : "has"
-
-    users {
-        UUID id PK "auth.users"
-        string email
-    }
-
-    chat_messages {
-        UUID id PK
-        UUID user_id FK
-        string role
-        text content
-        timestamp created_at
-    }
-
-    reports {
-        UUID id PK
-        UUID user_id FK
-        string title
-        text file_url
-        text prompt
-        text result
-        string status
-        timestamp created_at
-    }
-
-    documents {
-        UUID id PK
-        UUID user_id FK
-        string template_id
-        jsonb input_data
-        text generated_content
-        string status
-        timestamp created_at
-    }
-
-    user_settings {
-        UUID user_id PK, FK
-        text encrypted_openai_api_key
-        text encrypted_anthropic_api_key
-        text encrypted_google_api_key
-        timestamp updated_at
-    }
-```
-
-## 5. API設計
-
-Founding Engineerの提案を基に、認証要件を明記したAPIエンドポイントを以下に定義します。
-
-| 機能 | エンドポイント | Method | 認証 | リクエストボディ | レスポンス |
+| エンドポイント | Method | 機能 | リクエストボディ (例) | レスポンスボディ (例) | 認証 |
 |---|---|---|---|---|---|
-| **チャット** | `/api/chat` | POST | 必須 | `{ "message": "string" }` | `{ "reply": "string" }` |
-| | `/api/chat/history` | GET | 必須 | - | `[{...}]` |
-| **レポート生成** | `/api/report/upload` | POST | 必須 | `FormData (file)` | `{ "file_url": "string" }` |
-| | `/api/report/generate` | POST | 必須 | `{ "file_url": "string", "prompt": "string" }` | `{ "report_id": "uuid" }` |
-| | `/api/reports/:id` | GET | 必須 | - | `{ "status": "string", "result": "string" }` |
-| | `/api/reports` | GET | 必須 | - | `[{...}]` |
-| **書類生成** | `/api/document/generate` | POST | 必須 | `{ "template_id": "string", "data": {} }` | `{ "document_id": "uuid" }` |
-| | `/api/documents/:id` | GET | 必須 | - | `{ "status": "string", "content": "string" }` |
-| | `/api/documents` | GET | 必須 | - | `[{...}]` |
-| **設定** | `/api/settings/api-keys` | PUT | 必須 | `{ "provider": "string", "api_key": "string" }` | `{ "success": true }` |
+| `/api/auth/login` | POST | ユーザーログイン | `{ "email": "user@example.com", "password": "password" }` | `{ "accessToken": "jwt_token", "user": { "id": "uuid" } }` | 不要 |
+| `/api/auth/signup` | POST | ユーザー登録 | `{ "email": "user@example.com", "password": "password" }` | `{ "accessToken": "jwt_token", "user": { "id": "uuid" } }` | 不要 |
+| `/api/chat` | POST | チャットメッセージ送信・AI応答取得 | `{ "message": "先月の売上を教えて", "sessionId": "optional_uuid" }` | `{ "response": "string", "sessionId": "uuid" }` | 必須 |
+| `/api/chat/history` | GET | 会話履歴取得 | なし | `[{"role": "user/assistant", "content": "string", "created_at": "timestamp"}]` | 必須 |
+| `/api/chat/history/:sessionId` | GET | 特定セッションの履歴取得 | なし | `[{"role": "user/assistant", "content": "string", "created_at": "timestamp"}]` | 必須 |
+| `/api/report/upload` | POST | ファイルアップロード (CSV/Excel) | `multipart/form-data` | `{ "fileUrl": "string", "fileName": "string" }` | 必須 |
+| `/api/report/generate` | POST | レポート生成要求 | `{ "fileUrl": "string", "prompt": "売上データを分析して" }` | `{ "reportId": "uuid", "status": "pending" }` | 必須 |
+| `/api/report/:id` | GET | レポート結果取得 | なし | `{ "id": "uuid", "title": "string", "result": "string", "status": "completed/pending" }` | 必須 |
+| `/api/report/list` | GET | レポート一覧取得 | なし | `[{"id": "uuid", "title": "string", "created_at": "timestamp"}]` | 必須 |
+| `/api/document/generate` | POST | 書類生成要求 | `{ "templateId": "estimate", "inputData": { "company": "〇〇株式会社", "item": "AIコンサルティング", "amount": 100000 } }` | `{ "documentId": "uuid", "status": "pending" }` | 必須 |
+| `/api/document/:id` | GET | 生成済み書類取得 | なし | `{ "id": "uuid", "templateName": "string", "generatedContent": "string", "status": "completed/pending" }` | 必須 |
+| `/api/user/settings` | GET | ユーザー設定取得 | なし | `{ "apiKeyConfigured": true }` | 必須 |
+| `/api/user/settings` | PUT | ユーザー設定更新 (APIキー登録等) | `{ "openaiApiKey": "sk-...", "anthropicApiKey": "sk-..." }` | `{ "status": "success" }` | 必須 |
 
-## 6. BYOK (Bring Your Own Key) 実装方針
+## 3. BYOK (Bring Your Own Key) 実装方針
 
-ユーザーのAPIキーを安全に取り扱うため、以下の通り実装します。
+ユーザーは自身のAIプロバイダAPIキーを利用できるBYOK方式をサポートする。
 
-1.  **保存**: ユーザーが入力したAPIキーは、Cloudflare Workers上で環境変数として保持するユニークな暗号化キーを用いて暗号化し、`user_settings` テーブルの各カラムに保存します。
-2.  **利用**: ユーザーからのAIリクエスト時に、Workersは該当ユーザーの暗号化されたAPIキーをDBから取得し、メモリ上で復号してAIプロバイダーへのリクエストに使用します。
-3.  **破棄**: APIキーはリクエスト完了後、メモリ上から即座に破棄します。ログには一切記録しません。
-4.  **管理**: ユーザーはいつでもWeb UIから自分のAPIキーを更新・削除できます。
+- **APIキー登録**: ユーザーは設定画面からOpenAI/Anthropic/GoogleなどのAPIキーを登録する。
+- **保存**: 登録されたAPIキーはCloudflare Workersで受け取り、Supabaseの`user_settings`テーブルに暗号化（AES-256）して保存する。ユーザーごとに分離し、RLSで保護する。
+- **利用**: AIリクエスト時、Cloudflare WorkersはSupabaseからユーザーのAPIキーを複合して取得し、AI Provider APIに渡す。
+- **セキュリティ**: APIキーはサーバーサイドで一時的に利用し、ログには記録せず、リクエスト処理完了後すぐにメモリから破棄する。
 
-## 7. セキュリティ要件
+## 4. セキュリティ要件
 
-全社技術方針に加え、ツミキリ固有のセキュリティ対策を徹底します。
+TOPPA Inc.の全社技術方針に加え、ツミキリ固有の要件を定義する。
 
-| 脅威 | 対策 | 担当 |
-|---|---|---|
-| **SQLインジェクション** | Supabaseクライアントライブラリを使用し、直接のSQLクエリ発行を禁止。RLSを徹底。 | Engineer |
-| **XSS / CSRF** | Reactの標準機能とHonoのセキュリティミドルウェアで対策。 | Engineer |
-| **不正なファイルアップロード** | Supabase Storageのポリシーでファイル種別（CSV, XLSX）とサイズ（上限10MB）を制限。サーバーサイドで再度バリデーションを実施。 | Engineer |
-| **プロンプトインジェクション** | システムプロンプトに防御指示を組み込む。ユーザー入力を明確に区切り、LLMにコンテキストを誤認させない工夫を施す。 | Engineer / PdM |
-| **APIキー漏洩** | Cloudflare Workersのシークレット管理機能で暗号化キーを保護。DBへのアクセスはRLSで制限。 | CTO / Engineer |
-| **サービス妨害 (DoS)** | Cloudflareのレート制限機能をAPIエンドポイントに適用（例: 1分あたり10リクエスト）。 | CTO |
+- **データ保護**:
+    - 通信はTLS 1.3 (Cloudflare標準) で常に暗号化する。
+    - Supabaseに保存されるデータはAES-256で暗号化する。
+    - APIキーなどの機密情報はCloudflare Workersのシークレット管理機能を利用し、環境変数として安全に管理する。
+- **認証・認可**:
+    - ユーザー認証はSupabase Authを利用し、メールアドレスとパスワード、またはソーシャルログインをサポートする。
+    - データベースのアクセス制御にはRow Level Security (RLS) を適用し、各ユーザーが自身のデータのみにアクセスできるよう徹底する。
+    - APIエンドポイントはすべて認証済みユーザーからのリクエストのみを許可する。
+- **BYOKセキュリティ**:
+    - ユーザーのAPIキーは暗号化して保存し、サーバーサイドでの一時利用に限定する。
+    - AIプロバイダへのリクエスト時にのみメモリ上で複合し、利用後は即座にメモリから破棄する。
+    - APIキーがログに記録されることを厳しく禁止する。
+- **不正利用対策**:
+    - 各APIエンドポイントにはレート制限を設ける (例: 1分あたり10リクエスト)。
+    - 不審なAPI利用パターンを検知するための監視メカニズムを将来的に導入する。
+- **依存ライブラリ**: 使用する全てのサードパーティライブラリは定期的に脆弱性スキャンを実施する。
 
-## 8. 開発・テスト戦略
+## 5. データモデル設計
 
-Founding Engineerが策定した `docs/implementation-plan.md` のテスト戦略を全面的に承認します。
+Supabase (PostgreSQL) に以下のテーブルを定義する。全てのテーブルに`user_id`を設け、RLSを適用する。
 
-- **ユニットテスト**: Vitest (カバレッジ目標 80%)
-- **E2Eテスト**: Playwright (主要3フロー)
-- **レビュープロセス**: 全てのコードは、`feature/*` ブランチから `develop` ブランチへのPull Requestを通じて、CTO（マルコ・ロッシ）のレビューを必須とします。
+### `chat_messages` (会話履歴テーブル)
 
-## 9. 次のステップ
+| カラム名 | データ型 | 制約 | 説明 |
+|---|---|---|---|
+| `id` | `UUID` | `PRIMARY KEY`, `DEFAULT gen_random_uuid()` | メッセージID |
+| `user_id` | `UUID` | `REFERENCES auth.users(id) ON DELETE CASCADE` | ユーザーID |
+| `role` | `VARCHAR(10)` | `NOT NULL`, `CHECK (role IN ('user', 'assistant', 'system'))` | 発言者 (ユーザー/AI/システム) |
+| `content` | `TEXT` | `NOT NULL` | メッセージ内容 |
+| `created_at` | `TIMESTAMPTZ` | `DEFAULT NOW()` | 作成日時 |
+| `session_id` | `UUID` | `DEFAULT gen_random_uuid()` | 会話セッションID (新規追加) |
 
-| アクション | 担当 | 期限 |
-|---|---|---|
-| PdMの仕様書 (`mvp-spec.md`) との技術的整合性確認 | CTO (マルコ) | 2026-02-16 |
-| 認証機能の実装開始 | Engineer (カルロス) | 2026-02-16 |
-| APIの OpenAPI (Swagger) 定義作成 | CTO (マルコ) | 2026-02-17 |
+### `reports` (レポート生成履歴テーブル)
+
+| カラム名 | データ型 | 制約 | 説明 |
+|---|---|---|---|
+| `id` | `UUID` | `PRIMARY KEY`, `DEFAULT gen_random_uuid()` | レポートID |
+| `user_id` | `UUID` | `REFERENCES auth.users(id) ON DELETE CASCADE` | ユーザーID |
+| `title` | `VARCHAR(255)` | `NOT NULL` | レポートタイトル |
+| `file_name` | `VARCHAR(255)` | | アップロードファイル名 |
+| `file_url` | `TEXT` | | Supabase Storage上のファイルURL |
+| `prompt` | `TEXT` | `NOT NULL` | ユーザーの分析指示プロンプト |
+| `result` | `TEXT` | | AI生成レポート結果 (Markdown) |
+| `status` | `VARCHAR(20)` | `DEFAULT 'pending'` | 処理ステータス ('pending', 'completed', 'failed') |
+| `created_at` | `TIMESTAMPTZ` | `DEFAULT NOW()` | 作成日時 |
+| `completed_at` | `TIMESTAMPTZ` | | 処理完了日時 |
+
+### `documents` (生成済み書類テーブル)
+
+| カラム名 | データ型 | 制約 | 説明 |
+|---|---|---|---|
+| `id` | `UUID` | `PRIMARY KEY`, `DEFAULT gen_random_uuid()` | 書類ID |
+| `user_id` | `UUID` | `REFERENCES auth.users(id) ON DELETE CASCADE` | ユーザーID |
+| `template_id` | `VARCHAR(50)` | `NOT NULL` | 使用テンプレートID (例: 'estimate') |
+| `template_name` | `VARCHAR(100)` | `NOT NULL` | テンプレート名 (例: '見積書') |
+| `input_data` | `JSONB` | `NOT NULL` | ユーザー入力データ (JSON形式) |
+| `generated_content` | `TEXT` | | AI生成書類内容 (Markdown/PDF URL) |
+| `status` | `VARCHAR(20)` | `DEFAULT 'pending'` | 処理ステータス ('pending', 'completed', 'failed') |
+| `created_at` | `TIMESTAMPTZ` | `DEFAULT NOW()` | 作成日時 |
+| `completed_at` | `TIMESTAMPTZ` | | 処理完了日時 |
+
+### `user_settings` (ユーザー設定テーブル)
+
+| カラム名 | データ型 | 制約 | 説明 |
+|---|---|---|---|
+| `user_id` | `UUID` | `PRIMARY KEY`, `REFERENCES auth.users(id) ON DELETE CASCADE` | ユーザーID |
+| `openai_api_key_encrypted` | `TEXT` | | OpenAI APIキー (暗号化) |
+| `anthropic_api_key_encrypted` | `TEXT` | | Anthropic APIキー (暗号化) |
+| `google_api_key_encrypted` | `TEXT` | | Google APIキー (暗号化) |
+| `updated_at` | `TIMESTAMPTZ` | `DEFAULT NOW()` | 最終更新日時 |
+
+## 6. 今後のアクション
+
+- Founding Engineerのカルロス・メンデスは本設計書に基づき実装を進める。
+- CTOは本設計書をレビューし、必要に応じて更新する。
+- 2026-02-21までに本設計書を確定させる。
