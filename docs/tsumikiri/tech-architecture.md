@@ -1,183 +1,289 @@
-# TOPPA Inc. ツミキリ MVP 技術アーキテクチャ設計書
+# ツミキリ MVP 技術アーキテクチャ設計
 
 > 作成: CTO マルコ・ロッシ
 > 日付: 2026-02-15
 > ステータス: 設計中
 
-## 1. システム構成
+## 1. エグゼクティブサマリー
+
+本ドキュメントは、TOPPA Inc.が開発する「ツミキリ」MVP（Minimum Viable Product）の技術アーキテクチャを定義する。PdMのプロダクト仕様、Founding Engineerの実装計画、およびTOPPA Inc.全体の技術方針に基づき、堅牢かつスケーラブルなシステム基盤を設計する。特に、BYOK（Bring Your Own Key）方式によるAI連携と、中小企業経営者向けのセキュリティ要件を重視する。
+
+## 2. システム構成図
+
+ツミキリMVPのシステムは、Cloudflare Pagesによるフロントエンドホスティング、Cloudflare WorkersによるAPI、Supabaseによるデータベースと認証、そして各種AIプロバイダーAPIで構成される。Founding Engineerの実装計画と整合性を保ち、詳細化する。
 
 ```mermaid
-graph TD
-    A[ブラウザ (React SPA)] -- APIリクエスト --> B(Cloudflare Pages)
-    B -- 静的ホスティング --> C(Cloudflare Workers)
-    C -- APIエンドポイント --> D(Hono API)
-    D -- DBアクセス --> E(Supabase PostgreSQL)
-    D -- AIリクエスト --> F(AI Provider API)
-    E -- 認証/認可 --> G(Supabase Auth)
-    E -- ストレージ --> H(Supabase Storage)
+graph LR
+    User[ユーザー] -- HTTPS --> CloudflarePages[Cloudflare Pages (React SPA)]
+    CloudflarePages -- API Request (HTTPS) --> CloudflareWorkers[Cloudflare Workers (Hono API)]
+    CloudflareWorkers -- DB Access (PostgreSQL) --> SupabaseDB[Supabase (PostgreSQL)]
+    CloudflareWorkers -- Auth --> SupabaseAuth[Supabase Auth]
+    CloudflareWorkers -- Storage Access --> SupabaseStorage[Supabase Storage]
+    CloudflareWorkers -- AI Request (BYOK/Managed) --> AIProviderAPI[AI Provider API (OpenAI/Anthropic/Google)]
+
+    subgraph Frontend
+        CloudflarePages
+    end
+
+    subgraph Backend
+        CloudflareWorkers
+    end
+
+    subgraph Data & Auth
+        SupabaseDB
+        SupabaseAuth
+        SupabaseStorage
+    end
+
+    subgraph External Services
+        AIProviderAPI
+    end
 ```
 
-## 2. 技術スタック
+### 2.1. コンポーネント詳細
 
-- **フロントエンド**: React 19 + TypeScript + Vite, Tailwind CSS, Zustand, React Router
-- **バックエンド**: Cloudflare Workers, Hono
-- **データベース**: Supabase (PostgreSQL, Auth, Storage)
-- **AI**: OpenAI (GPT-4o), Anthropic (Claude Sonnet 4.5), Google (Gemini 2.5 Pro) - BYOK方式またはマネージド方式
-- **ホスティング**: Cloudflare Pages (フロントエンド), Cloudflare Workers (APIサーバー)
-- **CI/CD**: GitHub Actions, Cloudflare Wrangler
+-   **Cloudflare Pages (React SPA)**:
+    -   フロントエンドの静的ホスティング。Vite + React + TypeScript + Tailwind CSS を使用。
+    -   ユーザーインターフェースを提供し、Cloudflare Workers APIと連携。
+-   **Cloudflare Workers (Hono API)**:
+    -   バックエンドAPIサーバー。エッジコンピューティングにより低レイテンシを実現。
+    -   ユーザーリクエストの処理、Supabaseとのデータ連携、AIプロバイダーAPIへのリクエストを行う。
+    -   認証ミドルウェアを実装し、APIキーの検証やユーザー認証を行う。
+-   **Supabase (PostgreSQL)**:
+    -   データベース（PostgreSQL）、認証（Auth）、オブジェクトストレージ（Storage）を提供。
+    -   ユーザーデータ、会話履歴、レポート履歴、生成済み書類、ユーザー設定などを保存。
+    -   Row Level Security (RLS) を活用し、ユーザーごとのデータアクセスを厳格に制御。
+-   **AI Provider API (OpenAI/Anthropic/Google)**:
+    -   AI機能を提供する外部サービス。BYOK方式またはTOPPA Inc.が管理するAPIキーで利用。
+    -   自然言語処理、データ分析、テキスト生成などに活用。
 
 ## 3. API設計
 
-### 3.1. エンドポイント一覧
+Founding Engineerの計画に基づき、主要なAPIエンドポイントを定義する。
 
-| エンドポイント | Method | 機能 | 認証 |
-|---|---|---|---|
-| `/api/auth/login` | POST | ログイン | 不要 |
-| `/api/auth/signup` | POST | サインアップ | 不要 |
-| `/api/auth/logout` | POST | ログアウト | 必要 |
-| `/api/user/profile` | GET | ユーザープロファイル取得 | 必要 |
-| `/api/user/profile` | PUT | ユーザープロファイル更新 | 必要 |
-| `/api/chat` | POST | チャット送信・AI応答取得 | 必要 |
-| `/api/chat/history` | GET | 会話履歴取得 | 必要 |
-| `/api/chat/history/:sessionId` | GET | 特定セッションの履歴取得 | 必要 |
-| `/api/report/generate` | POST | AIレポート生成 | 必要 |
-| `/api/report/history` | GET | レポート履歴取得 | 必要 |
-| `/api/report/:reportId` | GET | 特定レポート取得 | 必要 |
-| `/api/document/generate` | POST | テンプレート書類生成 | 必要 |
-| `/api/document/history` | GET | 生成済み書類履歴取得 | 必要 |
-| `/api/document/:documentId` | GET | 特定書類取得 | 必要 |
+### 3.1. 認証API
 
-### 3.2. APIフロー (チャット機能例)
+| エンドポイント | Method | 機能 | リクエストボディ | レスポンスボディ | 備考 |
+|---------------|--------|------|------------------|------------------|------|
+| `/api/auth/signup` | POST | ユーザー登録 | `email`, `password` | `user`オブジェクト | Supabase Authを利用 |
+| `/api/auth/signin` | POST | ログイン | `email`, `password` | `session`オブジェクト | Supabase Authを利用 |
+| `/api/auth/signout` | POST | ログアウト | なし | なし | Supabase Authを利用 |
+| `/api/auth/user` | GET | ユーザー情報取得 | なし | `user`オブジェクト | 認証済みユーザー情報 |
 
-```mermaid
-sequenceDiagram
-    participant User
-    participant Frontend
-    participant CloudflareWorker
-    participant SupabaseDB
-    participant AIProvider
+### 3.2. チャットアシスタントAPI
 
-    User->>Frontend: チャットメッセージ入力
-    Frontend->>CloudflareWorker: POST /api/chat (メッセージ, ユーザーID)
-    CloudflareWorker->>SupabaseDB: 会話履歴保存 (ユーザーメッセージ)
-    CloudflareWorker->>AIProvider: AI生成リクエスト
-    AIProvider-->>CloudflareWorker: AI応答
-    CloudflareWorker->>SupabaseDB: 会話履歴保存 (AI応答)
-    CloudflareWorker-->>Frontend: AI応答
-    Frontend-->>User: AI応答表示
+| エンドポイント | Method | 機能 | リクエストボディ | レスポンスボディ | 備考 |
+|---------------|--------|------|------------------|------------------|------|
+| `/api/chat` | POST | チャット送信・AI応答取得 | `message`, `sessionId`(optional) | `aiResponse`, `sessionId` | 会話履歴をSupabaseに保存 |
+| `/api/chat/history` | GET | 会話履歴取得 | `userId` (クエリパラメータ) | `chatMessages[]` | 特定ユーザーの全履歴 |
+| `/api/chat/history/:sessionId` | GET | 特定セッションの履歴取得 | なし | `chatMessages[]` | 特定セッションの履歴 |
+
+**`/api/chat` リクエストボディ例:**
+```json
+{
+  "message": "先月の売上データを分析して、要約レポートを作成してください。",
+  "sessionId": "a1b2c3d4-e5f6-7890-1234-567890abcdef"
+}
 ```
 
-## 4. データベース設計
-
-### 4.1. 主要テーブル
-
-```mermaid
-erDiagram
-    USERS ||--o{ CHAT_MESSAGES : "has"
-    USERS ||--o{ REPORTS : "generates"
-    USERS ||--o{ DOCUMENTS : "creates"
-    USERS ||--o{ USER_SETTINGS : "configures"
-
-    USERS {
-        UUID id PK
-        TEXT email
-        TEXT password_hash
-        TIMESTAMPTZ created_at
-        TIMESTAMPTZ updated_at
-    }
-
-    CHAT_MESSAGES {
-        UUID id PK
-        UUID user_id FK
-        VARCHAR(10) role
-        TEXT content
-        TIMESTAMPTZ created_at
-    }
-
-    REPORTS {
-        UUID id PK
-        UUID user_id FK
-        VARCHAR(255) title
-        VARCHAR(255) file_name
-        TEXT file_url
-        TEXT prompt
-        TEXT result
-        TIMESTAMPTZ created_at
-    }
-
-    DOCUMENTS {
-        UUID id PK
-        UUID user_id FK
-        VARCHAR(255) title
-        VARCHAR(255) template_name
-        JSONB data
-        TEXT result_url
-        TIMESTAMPTZ created_at
-    }
-
-    USER_SETTINGS {
-        UUID id PK
-        UUID user_id FK
-        TEXT openai_api_key
-        TEXT anthropic_api_key
-        TEXT google_api_key
-        TIMESTAMPTZ created_at
-        TIMESTAMPTZ updated_at
-    }
+**`/api/chat` レスポンスボディ例:**
+```json
+{
+  "aiResponse": "承知いたしました。先月の売上データを分析し、主要な傾向と課題をまとめたレポートを作成します。",
+  "sessionId": "a1b2c3d4-e5f6-7890-1234-567890abcdef"
+}
 ```
 
-### 4.2. Row Level Security (RLS)
+### 3.3. AIレポート生成API
 
-- `chat_messages` テーブルには以下のポリシーを適用する。
-    - SELECT: `auth.uid() = user_id` (ユーザーは自身のメッセージのみ閲覧可能)
-    - INSERT: `auth.uid() = user_id` (ユーザーは自身のメッセージのみ挿入可能)
-- 他のテーブル (`reports`, `documents`, `user_settings`) も同様に `user_id` を用いたRLSを適用し、データ分離を徹底する。
+| エンドポイント | Method | 機能 | リクエストボディ | レスポンスボディ | 備考 |
+|---------------|--------|------|------------------|------------------|------|
+| `/api/report/upload` | POST | ファイルアップロード | `file` (FormData) | `fileId`, `fileName` | Supabase Storageに一時保存 |
+| `/api/report/generate` | POST | レポート生成指示 | `fileId`, `prompt` | `reportId`, `status` | AIによる分析とレポート生成 |
+| `/api/report/:reportId` | GET | レポート取得 | なし | `report`オブジェクト | 生成されたレポート内容 |
+| `/api/report/:reportId/download` | GET | レポートダウンロード | なし | ファイル | PDF/Markdown形式 |
 
-## 5. BYOK (Bring Your Own Key) 実装方針
+### 3.4. テンプレート書類生成API
 
-- ユーザーのAPIキーはSupabaseの `user_settings` テーブルに暗号化して保存する。
-- Cloudflare Workers経由でAI Provider APIにリクエスト時に一時的に復号し利用。
-- リクエスト完了後、メモリから即座に破棄。ログには記録しない。
+| エンドポイント | Method | 機能 | リクエストボディ | レスポンスボディ | 備考 |
+|---------------|--------|------|------------------|------------------|------|
+| `/api/template/list` | GET | テンプレート一覧取得 | なし | `templates[]` | 利用可能なテンプレート |
+| `/api/template/generate` | POST | 書類生成 | `templateId`, `data` | `documentId`, `status` | テンプレートから書類生成 |
+| `/api/document/:documentId` | GET | 生成書類取得 | なし | `document`オブジェクト | 生成された書類内容 |
+| `/api/document/:documentId/download` | GET | 書類ダウンロード | なし | ファイル | PDF/Word形式 |
 
-## 6. セキュリティ要件
+## 4. BYOK実装方針
 
-- **通信**: TLS 1.3 (Cloudflare標準)
-- **保存データ**: Supabase暗号化 (AES-256)
-- **APIキー**: Cloudflare Workers のシークレット管理、Supabaseでの暗号化保存（`user_settings`テーブル）
-- **認証・認可**: Supabase Auth (メール + ソーシャルログイン)、Row Level Security (RLS) を全ユーザーデータテーブルに適用
-- **BYOK**: ユーザーAPIキーの一時利用、ログ不記録、メモリからの即時破棄を徹底
+ユーザーが自身のAIプロバイダーAPIキーを利用できるBYOK (Bring Your Own Key) 方式をサポートする。
 
-## 7. 開発・デプロイ
+### 4.1. キーの管理
 
-### 7.1. GitHubリポジトリ構成
+-   **保存場所**: Supabaseの`user_settings`テーブルに暗号化して保存。RLSによりユーザー本人しかアクセスできないようにする。
+-   **暗号化**: SupabaseのPostgreSQLの暗号化機能を利用し、データベースレベルで保護。
+-   **取得・利用**: Cloudflare Workersがユーザーのリクエストに応じて一時的にキーを取得し、AIプロバイダーAPIへのリクエスト時にのみ使用。リクエスト処理後はメモリから即座に破棄。ログには記録しない。
 
-- **リポジトリ名**: `toppa-inc/tsumikiri` (Private)
-- **初期ブランチ構成**:
-    - `main`: 本番環境（自動デプロイ）
-    - `develop`: 開発統合ブランチ
-    - `feature/*`: 機能開発ブランチ
-- **ブランチ保護**: `main` ブランチへの直接pushは禁止。PR必須、CTOレビュー後にマージ。
+### 4.2. AIプロバイダー連携
 
-### 7.2. 環境構築ファイル
+-   ユーザーが設定したAPIキーに基づき、OpenAI, Anthropic, GoogleなどのAIプロバイダーAPIと連携。
+-   APIリクエスト時には、ユーザーのAPIキーをAuthorizationヘッダーなどにセットして送信。
+-   エラーハンドリング: APIキーの無効、レートリミット超過などのエラーを適切に処理し、ユーザーにフィードバック。
 
-Founding Engineerによって以下の環境構築ファイルが作成済み。これらをCI/CDおよび開発環境で活用する。
+## 5. セキュリティ要件
 
-- `supabase/schema.sql`: DBスキーマ定義
-- `.env.example`: 環境変数テンプレート
-- `wrangler.toml`: Cloudflare Workers設定
-- `package.json`: 依存関係定義
-- `tsconfig.json`: TypeScript設定
-- `tailwind.config.js`: Tailwind CSS設定
-- `vite.config.ts`: Vite設定
+TOPPA Inc.全体のセキュリティ方針に加え、ツミキリMVPに特化した要件を定義する。
 
-### 7.3. CI/CD
+### 5.1. 認証・認可
 
-- **GitHub Actions**: PR時にLint + Type Check + テストを実行。
-- **Cloudflare Wrangler**: `main` ブランチマージ時に自動デプロイ。
+-   **Supabase Auth**: メールアドレスとパスワードによる認証に加え、将来的にはソーシャルログインも検討。
+-   **Row Level Security (RLS)**:
+    -   `chat_messages`, `reports`, `documents`, `user_settings`など、ユーザー固有のデータテーブルにはRLSを有効化。
+    -   ユーザーは自身のデータのみを閲覧・操作できるポリシーを厳格に適用。
 
-## 8. 検討事項
+### 5.2. データ保護
 
-- エラーハンドリングの詳細設計
-- 監視・ロギング戦略
-- 負荷試験計画
-- ドキュメント生成機能におけるテンプレート管理の具体化 (Supabase Storageの活用)
+-   **通信の暗号化**: 全ての通信はTLS 1.3により暗号化（Cloudflareの標準機能）。
+-   **保存データの暗号化**: Supabaseに保存されるデータはAES-256で暗号化。特にAPIキーや機密性の高いユーザーデータは追加の暗号化を検討。
+-   **ファイルストレージ**: Supabase Storageを利用し、アップロードされたファイルもアクセス制御を徹底。
+
+### 5.3. BYOKの安全性
+
+-   ユーザーのAPIキーはサーバーサイドで一時的に利用し、ログには一切記録しない。
+-   キーの利用範囲を最小限に制限し、指定されたAIプロバイダーAPIへのリクエスト以外には使用しない。
+-   キーの有効期限管理やローテーションはユーザー自身に委ねるが、推奨事項を提示する。
+
+## 6. データベース設計
+
+Founding Engineerの`docs/implementation-plan.md`に基づき、主要なテーブルスキーマを詳細化する。
+
+### 6.1. `chat_messages` テーブル
+
+会話履歴を保存する。
+
+```sql
+CREATE TABLE chat_messages (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+    role VARCHAR(10) NOT NULL CHECK (role IN ('user', 'assistant', 'system')),
+    content TEXT NOT NULL,
+    session_id UUID DEFAULT gen_random_uuid(), -- 会話セッションIDを追加
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- RLS有効化
+ALTER TABLE chat_messages ENABLE ROW LEVEL SECURITY;
+
+-- ユーザーポリシー
+CREATE POLICY "Users can view own messages"
+    ON chat_messages FOR SELECT
+    USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can insert own messages"
+    ON chat_messages FOR INSERT
+    WITH CHECK (auth.uid() = user_id);
+```
+**変更点**: `session_id` を追加し、特定の会話セッションの履歴を管理しやすくする。
+
+### 6.2. `reports` テーブル
+
+AIレポート生成履歴を保存する。
+
+```sql
+CREATE TABLE reports (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+    title VARCHAR(255) NOT NULL,
+    file_name VARCHAR(255),
+    file_url TEXT, -- Supabase StorageのURL
+    prompt TEXT NOT NULL,
+    result TEXT, -- AIが生成したレポート内容
+    status VARCHAR(50) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'processing', 'completed', 'failed')),
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- RLS有効化
+ALTER TABLE reports ENABLE ROW LEVEL SECURITY;
+
+-- ユーザーポリシー
+CREATE POLICY "Users can view own reports"
+    ON reports FOR SELECT
+    USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can insert own reports"
+    ON reports FOR INSERT
+    WITH CHECK (auth.uid() = user_id);
+```
+**変更点**: `status` フィールドを追加し、レポート生成の進捗を管理できるようにする。
+
+### 6.3. `documents` テーブル
+
+生成済み書類を保存する。
+
+```sql
+CREATE TABLE documents (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+    template_id UUID, -- どのテンプレートから生成されたか
+    title VARCHAR(255) NOT NULL,
+    content TEXT NOT NULL, -- 生成された書類の内容
+    file_url TEXT, -- Supabase StorageのURL
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- RLS有効化
+ALTER TABLE documents ENABLE ROW LEVEL SECURITY;
+
+-- ユーザーポリシー
+CREATE POLICY "Users can view own documents"
+    ON documents FOR SELECT
+    USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can insert own documents"
+    ON documents FOR INSERT
+    WITH CHECK (auth.uid() = user_id);
+```
+**変更点**: `template_id` を追加し、どのテンプレートから生成された書類かを追跡できるようにする。
+
+### 6.4. `user_settings` テーブル
+
+ユーザー設定やAPIキーを保存する。
+
+```sql
+CREATE TABLE user_settings (
+    user_id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+    openai_api_key TEXT, -- 暗号化して保存
+    anthropic_api_key TEXT, -- 暗号化して保存
+    google_api_key TEXT, -- 暗号化して保存
+    default_ai_model VARCHAR(50) DEFAULT 'openai_gpt4o',
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- RLS有効化
+ALTER TABLE user_settings ENABLE ROW LEVEL SECURITY;
+
+-- ユーザーポリシー
+CREATE POLICY "Users can view own settings"
+    ON user_settings FOR SELECT
+    USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can update own settings"
+    ON user_settings FOR UPDATE
+    USING (auth.uid() = user_id);
+```
+**変更点**: `default_ai_model` を追加し、ユーザーがデフォルトで使用するAIモデルを選択できるようにする。
+
+## 7. 将来の拡張性
+
+-   **Webhook連携**: 各機能のイベント発生時に外部サービスへ通知する仕組みを検討。
+-   **監査ログ**: セキュリティ強化のため、重要な操作の監査ログを記録する仕組みを追加。
+-   **マルチテナント**: 将来的な企業向けプランを考慮し、企業ごとのデータ分離をより厳格に行うアーキテクチャを検討。
+
+## 8. 技術的リスクと対策（ツミキリMVP特化）
+
+| リスク | 対策 |
+|--------|------|
+| AI応答の品質ばらつき | プロンプトエンジニアリングの最適化、ユーザーによる評価フィードバック機能の実装、複数AIモデルの利用オプション提供 |
+| BYOKの不正利用 | APIキーの利用範囲を厳格に制限、キーの利用ログ（非キー情報）の監視、レートリミット設定 |
+| 大容量ファイルアップロード時の性能劣化 | Cloudflare Workersの制限を考慮し、ファイルサイズ上限を設定、Supabase Storageのパフォーマンス監視 |
+| Supabaseのサービス停止 | Cloudflare Workersのキャッシュ機能活用、Supabaseの冗長構成オプションの検討、代替データベースの調査（将来的に） |
