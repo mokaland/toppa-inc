@@ -62,106 +62,44 @@ graph LR
     - 自然言語で分析指示
     - AIがデータを分析し、日本語レポート生成
     - PDF/Markdownダウンロード
-- **技術スタック**:
+
+- **システム構成**:
     - **フロントエンド**: React + TypeScript
     - **バックエンド**: Cloudflare Workers (Hono)
-    - **データベース**: Supabase Storage (ファイル一時保存), Supabase (レポート履歴 `reports` テーブル)
-    - **ファイル解析**: `papaparse` (CSV), `xlsx` (Excel)
-        - **`xlsx`ライブラリのCloudflare Workersにおける互換性と導入方針**:
-            - `xlsx`ライブラリはNode.js/ブラウザ環境を想定しているため、Cloudflare WorkersのEdge RuntimeではNode.jsの組み込みモジュールが利用できない場合がある。
-            - **対応策**:
-                1. `wrangler`によるバンドルと`node_compat = true`設定で、Node.js依存の一部を解決し利用を試みる。これが現実的な第一アプローチ。
-                2. `node_compat`で問題が発生した場合、CDNで提供されるブラウザ向けビルドを`importScripts`で利用するか、WASM版の導入を検討する。
+        - **ファイル解析**: `papaparse` (CSV), `xlsx` (Excel) を利用。`xlsx`ライブラリはCloudflare Workers環境での互換性を考慮し、`wrangler`によるバンドルと`node_compat = true`の設定で導入を試みる。問題が発生した場合はCDN版/WASM版の利用を検討する。
+        - **ファイル一時保存**: Supabase Storage
     - **AIプロバイダー**: OpenAI GPT-4o (データ分析 + レポート生成)
 
-- **APIエンドポイント設計**:
-    - `/api/report/upload` (POST): ファイルアップロード
-    - `/api/report/generate` (POST): レポート生成
-    - `/api/report/history` (GET): レポート履歴取得
-    - `/api/report/download/:reportId` (GET): レポートダウンロード
+- **データベーススキーマ**:
+    - `reports` テーブル: レポート履歴を管理。
 
-- **データベーススキーマ（Supabase PostgreSQL）**:
-    ```sql
-    CREATE TABLE reports (
-        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
-        title VARCHAR(255) NOT NULL,
-        file_name VARCHAR(255),
-        file_url TEXT,
-        prompt TEXT NOT NULL,
-        result TEXT,
-        format VARCHAR(50), -- pdf, markdown
-        created_at TIMESTAMPTZ DEFAULT NOW()
-    );
+- **APIエンドポイント**:
+    - `/api/report/upload`: ファイルアップロード。
+    - `/api/report/generate`: レポート生成。
+    - `/api/report/history`: レポート履歴取得。
 
-    ALTER TABLE reports ENABLE ROW LEVEL SECURITY;
+## 6. パフォーマンス要件
 
-    CREATE POLICY "Users can view own reports"
-        ON reports FOR SELECT
-        USING (auth.uid() = user_id);
+| 指標 | 目標値 |
+|------|--------|
+| 初期ロード | 2秒以内（LCP） |
+| チャット応答 | 3秒以内（AI応答含む） |
+| レポート生成 | 10秒以内（CSV 1000行まで） |
+| 書類生成 | 5秒以内 |
 
-    CREATE POLICY "Users can insert own reports"
-        ON reports FOR INSERT
-        WITH CHECK (auth.uid() = user_id);
-    ```
+## 7. 将来の技術拡張（Q2以降の検討事項）
 
-- **動作検証計画（xlsxライブラリ）**:
-    1. **テスト用Excelファイルの準備**: シンプルなデータを含むExcelファイル（.xlsx形式）を複数パターン（単一シート、複数シート、異なるデータ型など）で用意する。
-    2. **ローカル環境での動作検証**: `wrangler dev`コマンドを使用してCloudflare Workersのローカル開発サーバーを起動し、用意したテスト用Excelファイルをアップロードし、`xlsx`ライブラリによる解析が正しく行われることを確認する。
-    3. **デプロイ後の動作検証**: テストブランチにコミットし、Cloudflare Pages/Workersにデプロイ後、同様のテストを実施し、本番に近い環境での動作を確認する。
+- 音声入力: Web Speech API → 自然言語指示
+- モバイルアプリ: PWA対応（インストール不要）
+- Webhook連携: 外部サービスとの自動連携
+- マルチテナント: 企業ごとのデータ完全分離
 
-### 5-3. テンプレート書類生成
+## 8. 技術的リスクと対策
 
-- **機能要件**:
-    - 事前に登録したテンプレートから見積書・請求書などを自動生成
-    - 顧客情報・商品情報を入力 → AIが埋め込み
-    - PDFダウンロード・メール送信
-
-- **技術スタック**:
-    - **フロントエンド**: React + TypeScript
-    - **バックエンド**: Cloudflare Workers (Hono)
-    - **データベース**: Supabase (テンプレート `templates` テーブル, 顧客情報 `customers` テーブル)
-    - **AIプロバイダー**: OpenAI GPT-4o (書類内容生成)
-    - **PDF生成**: Puppeteer (Cloudflare Workersとの互換性を確認)
-
-- **APIエンドポイント設計**:
-    - `/api/template/list` (GET): テンプレート一覧取得
-    - `/api/template/generate` (POST): 書類生成
-    - `/api/template/:templateId` (GET): 特定テンプレート取得
-    - `/api/customer/list` (GET): 顧客情報一覧取得
-    - `/api/customer/add` (POST): 顧客情報追加
-
-- **データベーススキーマ（Supabase PostgreSQL）**:
-    ```sql
-    CREATE TABLE templates (
-        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
-        name VARCHAR(255) NOT NULL,
-        type VARCHAR(50) NOT NULL, -- estimate, invoice, report
-        content TEXT NOT NULL, -- Markdown or HTML template
-        created_at TIMESTAMPTZ DEFAULT NOW()
-    );
-
-    CREATE TABLE customers (
-        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
-        name VARCHAR(255) NOT NULL,
-        email VARCHAR(255),
-        address TEXT,
-        phone VARCHAR(50),
-        created_at TIMESTAMPTZ DEFAULT NOW()
-    );
-
-    ALTER TABLE templates ENABLE ROW LEVEL SECURITY;
-    ALTER TABLE customers ENABLE ROW LEVEL SECURITY;
-
-    CREATE POLICY "Users can view own templates" ON templates FOR SELECT USING (auth.uid() = user_id);
-    CREATE POLICY "Users can insert own templates" ON templates FOR INSERT WITH CHECK (auth.uid() = user_id);
-    CREATE POLICY "Users can update own templates" ON templates FOR UPDATE USING (auth.uid() = user_id);
-    CREATE POLICY "Users can delete own templates" ON templates FOR DELETE USING (auth.uid() = user_id);
-
-    CREATE POLICY "Users can view own customers" ON customers FOR SELECT USING (auth.uid() = user_id);
-    CREATE POLICY "Users can insert own customers" ON customers FOR INSERT WITH CHECK (auth.uid() = user_id);
-    CREATE POLICY "Users can update own customers" ON customers FOR UPDATE USING (auth.uid() = user_id);
-    CREATE POLICY "Users can delete own customers" ON customers FOR DELETE USING (auth.uid() = user_id);
-    ```
+| リスク | 対策 |
+|--------|------|
+| AI応答の品質ばらつき | プロンプトエンジニアリングの継続的な改善、ユーザーからのフィードバックループ構築 |
+| Cloudflare Workersのコールドスタート | アイドル状態のWorkerを維持する設定（有料プラン）を検討。または、初回リクエスト時に高速に応答できるようAPIの最適化 |
+| SupabaseのRLS設定ミス | 厳格なコードレビューとテストによる検証 |
+| BYOKのAPIキー漏洩 | Cloudflare Workersのシークレット管理を徹底し、最小権限の原則を適用 |
+| 大規模データ処理時のパフォーマンス | Cloudflare Workersの制限を考慮し、大規模データはバッチ処理やストリーミング処理を検討 |
