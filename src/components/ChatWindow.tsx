@@ -31,15 +31,35 @@ const ChatWindow: React.FC = () => {
       setMessages((prevMessages) => [...prevMessages, newUserMessage]);
       setInputMessage('');
 
-      // モックAPI呼び出し (非同期処理をシミュレート)
-      await new Promise((resolve) => setTimeout(resolve, 1000)); // 1秒待機
+      try {
+        const response = await fetch('/api/chat', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ content: inputMessage }),
+        });
 
-      const assistantResponse: ChatMessage = {
-        id: String(messages.length + 2),
-        role: 'assistant',
-        content: `「${inputMessage}」についてですね。少々お待ちください。`, // モック応答
-      };
-      setMessages((prevMessages) => [...prevMessages, assistantResponse]);
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const data = await response.json();
+        const assistantResponse: ChatMessage = {
+          id: String(messages.length + 2),
+          role: 'assistant',
+          content: data.response, // APIからの応答を使用
+        };
+        setMessages((prevMessages) => [...prevMessages, assistantResponse]);
+      } catch (error) {
+        console.error('Failed to send message:', error);
+        const errorMessage: ChatMessage = {
+          id: String(messages.length + 2),
+          role: 'assistant',
+          content: 'メッセージの送信中にエラーが発生しました。もう一度お試しください。メッセージの送信中にエラーが発生しました。もう一度お試しください。',
+        };
+        setMessages((prevMessages) => [...prevMessages, errorMessage]);
+      }
     }
   };
 
@@ -49,14 +69,18 @@ const ChatWindow: React.FC = () => {
         {messages.map((message) => (
           <div
             key={message.id}
-            className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
+            className={`flex ${
+              message.role === 'user' ? 'justify-end' : 'justify-start'
+            }`}
           >
             <div
-              className={`${
-                message.role === 'user' ? 'bg-blue-500 text-white' : 'bg-gray-200'
-              } p-3 rounded-lg max-w-xs`}
+              className={`max-w-xs px-4 py-2 rounded-lg ${
+                message.role === 'user'
+                  ? 'bg-blue-500 text-white'
+                  : 'bg-gray-200 text-gray-800'
+              }`}
             >
-              <p className="text-sm">{message.content}</p>
+              {message.content}
             </div>
           </div>
         ))}
@@ -65,7 +89,7 @@ const ChatWindow: React.FC = () => {
       <div className="flex">
         <input
           type="text"
-          className="flex-grow border border-gray-300 rounded-l-lg p-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="flex-grow border rounded-lg p-2 mr-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
           placeholder="メッセージを入力..."
           value={inputMessage}
           onChange={(e) => setInputMessage(e.target.value)}
@@ -76,7 +100,7 @@ const ChatWindow: React.FC = () => {
           }}
         />
         <button
-          className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-r-lg"
+          className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
           onClick={handleSendMessage}
         >
           送信
