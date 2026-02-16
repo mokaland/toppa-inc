@@ -1,140 +1,139 @@
-# ツミキリ 技術アーキテクチャ設計書
+# TOPPA Inc. 技術アーキテクチャ設計書
 
 > 作成: CTO マルコ・ロッシ
-> 日付: 2026-02-16
-> ステータス: ドラフト
+> 日付: 2026-02-17
+> ステータス: 確定
+> レビュー: CEO 高橋レン
 
-## 1. プロダクト概要
+## 1. 技術理念
 
-ツミキリは、忙しい経営者のためのAI事務アシスタントであり、事務効率化を目的としたプロダクトです。本設計書は、ツミキリのMVP（Minimum Viable Product）における技術アーキテクチャについて記述します。
+**シンプルに、堅牢に。** 経営者が使うプロダクトに過剰な技術は不要。最小限の技術で最大限の価値を届ける。
 
 ## 2. 技術スタック
 
-TOPPA Inc. の技術方針書 (docs/tech-direction.md) に準拠し、以下の技術スタックを採用します。
-
 ### フロントエンド
 - **React 19** + **TypeScript** + **Vite**
-- **Tailwind CSS**
-- **Zustand**
-- **React Router**
+- **Tailwind CSS** — ユーティリティファーストでスピード重視
+- **Zustand** — 軽量状態管理（Redux不要）
+- **React Router** — SPA構成
 
 ### バックエンド
-- **Cloudflare Workers**
-- **Hono**
+- **Cloudflare Workers** — エッジコンピューティング、グローバル低レイテンシ
+- **Hono** — 軽量Webフレームワーク（Cloudflare Workers対応）
 
 ### データベース
-- **Supabase (PostgreSQL)**
+- **Supabase (PostgreSQL)** — 認証 + DB + ストレージを一括提供
+- Row Level Security（RLS）によるデータ分離
 
 ### AI（プロダクト向け）
-- **BYOK方式**: ユーザーのAPIキーでAI機能を利用 (OpenAI, Anthropic, Google)
+- **BYOK方式**: ユーザーのAPIキーでAI機能を利用
+  - OpenAI (GPT-4o / GPT-4.5)
+  - Anthropic (Claude Sonnet 4.5)
+  - Google (Gemini 2.5 Pro)
 - **マネージド方式**: TOPPA Inc.のAPIキーを使用（Pro プラン）
 
+### AI（社内エージェント基盤）
+- **MiniMax M2.5 Standard** — AI社員の全ロールが使用するモデル
+  - $0.15/1M input, $1.20/1M output
+  - コーディング能力: SWE-Bench 80.2%（Claude Opus 4.6級）
+  - 24時間フル自律運営: 月¥1,700
+- **GCP Cloud Functions + Cloud Scheduler** — 1-2時間おきにセッション自動実行
+- **GitHub API** — AI社員がリポジトリにコミット・push
+
 ### ホスティング
-- **Cloudflare Pages** (フロントエンド)
-- **Cloudflare Workers** (APIサーバー)
+- **Cloudflare Pages** — フロントエンドホスティング
+- **Cloudflare Workers** — APIサーバー
 
-## 3. アーキテクチャ概要
+### CI/CD
+- **GitHub Actions** — PR時にLint + Type Check + テスト
+- **Cloudflare Wrangler** — `main` ブランチマージ時に自動デプロイ
 
-基本的なアーキテクチャはTOPPA Inc.技術方針書に記載の通りですが、ツミキリに特化した詳細を以下に示します。
+## 3. アーキテクチャ
 
-```mermaid
-graph TD
-    A[ユーザーブラウザ (React SPA)] --> B(Cloudflare Pages);
-    B --> C(Cloudflare Workers / Hono API);
-    C --> D{Supabase};
-    C --> E[AI Provider API];
-    D -- 認証・データ保存 --> C;
-    E -- AI応答 --> C;
+```
+┌─────────────┐     ┌──────────────────┐     ┌─────────────┐
+│   ブラウザ    │────▶│ Cloudflare Pages │     │   Supabase   │
+│ (React SPA)  │     │   (静的ホスト)    │     │  PostgreSQL  │
+└──────┬───────┘     └──────────────────┘     │   Auth       │
+       │                                      │   Storage    │
+       │ API リクエスト                         └──────▲───────┘
+       ▼                                             │
+┌──────────────────┐                                 │
+│ Cloudflare Worker │─────────────────────────────────┘
+│   (Hono API)      │
+└──────┬───────────┘
+       │ AIリクエスト（BYOKまたはマネージド）
+       ▼
+┌──────────────────┐
+│  AI Provider API  │
+│ OpenAI/Anthropic/ │
+│ Google            │
+└──────────────────┘
 ```
 
-## 4. 主要機能の技術設計
+## 4. セキュリティ方針
 
-### 4.1. チャット機能
+### データ保護
+- 通信: TLS 1.3（Cloudflare標準）
+- 保存データ: Supabase暗号化（AES-256）
+- APIキー: Cloudflare Workers のシークレット管理
 
-ツミキリのコア機能であるAIチャット機能の設計について記述します。
+### 認証・認可
+- Supabase Auth（メール + ソーシャルログイン）
+- Row Level Security（RLS）: ユーザーは自分のデータのみアクセス可能
+- APIキーは暗号化して保存（ユーザーごとに分離）
 
-#### 4.1.1. APIエンドポイント
-- **エンドポイント**: `/api/chat`
-- **メソッド**: `POST`
-- **リクエストボディ**:
-    ```json
-    {
-      "messages": [
-        {"role": "user", "content": "はじめまして。"},
-        {"role": "assistant", "content": "こんにちは！何かお手伝いできることはありますか？"}
-      ],
-      "model": "gpt-4o", // または "claude-sonnet-4.5", "gemini-2.5-pro"
-      "stream": true // ストリーミング応答を希望する場合
-    }
-    ```
-- **レスポンスボディ (非ストリーミング)**:
-    ```json
-    {
-      "id": "chatcmpl-xxxx",
-      "object": "chat.completion",
-      "created": 1678886400,
-      "model": "gpt-4o",
-      "choices": [
-        {
-          "index": 0,
-          "message": {
-            "role": "assistant",
-            "content": "はい、承知いたしました。どのような事務作業でお困りですか？",
-          },
-          "logprobs": null,
-          "finish_reason": "stop",
-        }
-      ],
-      "usage": {
-        "prompt_tokens": 100,
-        "completion_tokens": 200,
-        "total_tokens": 300,
-      }
-    }
-    ```
-- **レスポンスボディ (ストリーミング)**: Server-Sent Events (SSE) または WebSockets を利用し、`delta` フィールドを含むチャンクを順次送信。
+### BYOK セキュリティ
+- ユーザーのAPIキーはサーバーサイドで一時利用のみ
+- ログに記録しない
+- リクエスト完了後メモリから破棄
 
-#### 4.1.2. AIモデルの選択と利用
-- ユーザーは設定画面で利用するAIモデルを選択可能。
-- BYOK方式の場合、ユーザーのAPIキーをCloudflare Workersのシークレットとして一時的に利用し、リクエスト完了後メモリから破棄。
-- マネージド方式の場合、TOPPA Inc.が管理するAPIキーを利用。
+## 5. 開発規約
 
-#### 4.1.3. 会話履歴の保存
-- ユーザーとAIの会話履歴はSupabaseの `chat_history` テーブルに保存。
-- `user_id`, `message_id`, `role`, `content`, `timestamp`, `model` などのカラムを持つ。
-- Row Level Security (RLS) を適用し、各ユーザーは自身の会話履歴のみアクセス可能とする。
+### コード品質
+- TypeScript strict mode 必須
+- ESLint + Prettier による自動フォーマット
+- 全関数にJSDocコメント（経営者向けプロダクトなので保守性重視）
 
-#### 4.1.4. エラーハンドリング
-- AIプロバイダーAPIからのエラー（レート制限、無効なAPIキーなど）は適切にキャッチし、ユーザーフレンドリーなエラーメッセージをフロントエンドに返す。
-- ネットワークエラーやサーバー内部エラーも同様に処理。
+### テスト
+- ユニットテスト: Vitest（カバレッジ80%目標）
+- E2Eテスト: Playwright（主要フロー3つ）
+- AI応答テスト: モックAPIでの動作検証
 
-### 4.2. 認証・認可
+### ブランチ戦略
+- `main`: 本番環境（自動デプロイ）
+- `develop`: 開発統合ブランチ
+- `feature/*`: 機能開発ブランチ
+- PR必須、CTOレビュー後にマージ
 
-Supabase Auth を利用し、メールアドレス/パスワード認証およびソーシャルログイン（Google, GitHubなど）に対応します。
-ユーザー認証後、JWTトークンをCloudflare Workersに渡し、APIリクエストの認可を行います。
+### コミットメッセージ
+- AGENTS.md準拠: `[ロール名] 内容`
+- 例: `[Engineer] CSVアップロード機能を実装`
 
-## 5. セキュリティ方針
+## 6. パフォーマンス要件
 
-TOPPA Inc.技術方針書に準拠し、以下のセキュリティ対策を講じます。
+| 指標 | 目標値 |
+|------|--------|
+| 初期ロード | 2秒以内（LCP） |
+| チャット応答 | 3秒以内（AI応答含む） |
+| レポート生成 | 10秒以内（CSV 1000行まで） |
+| 書類生成 | 5秒以内 |
 
-- **データ保護**: TLS 1.3、Supabase暗号化（AES-256）
-- **APIキー管理**: Cloudflare Workersのシークレット管理、BYOKキーの一時利用と破棄
-- **RLS**: SupabaseのRow Level Securityにより、ユーザーごとのデータ分離を徹底
+## 7. 将来の技術拡張（Q2以降の検討事項）
 
-## 6. テスト計画
+- **音声入力**: Web Speech API → 自然言語指示
+- **モバイルアプリ**: PWA対応（インストール不要）
+- **Webhook連携**: 外部サービスとの自動連携
+- **マルチテナント**: 企業ごとのデータ完全分離
 
-- **ユニットテスト**: Vitest を使用し、Cloudflare Workersのエンドポイント、ユーティリティ関数などの単体テストを実施。カバレッジ80%目標。
-- **E2Eテスト**: Playwright を使用し、主要なユーザーフロー（ログイン、チャットの開始と応答、設定変更など）を検証。
-- **AI応答テスト**: モックAPIを使用し、異なるAIモデルからの応答が期待通りに処理されるかを確認。
+## 8. ファイル処理方針
 
-## 7. 今後の拡張性（MVP以降）
+### Excelファイルの処理
+- **方針**: クライアントサイドでのパース
+- **理由**: Cloudflare WorkersはNode.jsのファイルシステムAPIに制限があり、`xlsx` 等のライブラリが動作しないため。クライアントサイドで処理することで、Workersの制約を回避し、追加コストなしで機能を実現する。
+- **実装**: Reactコンポーネント内で `FileReader` APIと `xlsx` ライブラリ（または同等の軽量ライブラリ）を使用してExcelファイルを読み込み、JSON形式に変換。変換されたデータはAPI経由でWorkersに送信する。
 
-- ファイルアップロード機能（PDF, Excelなどの要約・分析）
-- 外部サービス連携（Slack, Google Workspaceなど）
-- 音声入力・出力
-
-## 8. 技術的リスクと対策
-
-- **AI応答の品質ばらつき**: プロンプトエンジニアリングの最適化、ユーザーフィードバックループの導入。
-- **Cloudflare Workersの制約**: Node.js互換性の問題は、HonoなどのEdge Runtime対応フレームワークの利用、Web標準APIの活用で回避。
-- **Supabase RLSの複雑性**: 厳密なポリシー設計とテストにより、データ漏洩リスクを低減。
+### PDFファイルの生成
+- **方針**: クライアントサイドでの生成
+- **理由**: Workers環境でPDF生成ライブラリを動作させるのは困難であり、外部サービスを利用するとコストが発生するため。
+- **実装**: `jsPDF` や `react-pdf` などのクライアントサイドライブラリを用いて、ブラウザ上でPDFを生成し、ダウンロードさせる。
