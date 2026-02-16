@@ -71,22 +71,190 @@
 └──────────────────┘
 ```
 
-## 4. セキュリティ方針
+---
 
-### データ保護
-- 通信: TLS 1.3（Cloudflare標準）
-- 保存データ: Supabase暗号化（AES-256）
-- APIキー: Cloudflare Workers のシークレット管理
+## 4. API設計 - AIレポート生成機能
 
-### 認証・認可
-- Supabase Auth（メール + ソーシャルログイン）
-- Row Level Security（RLS）: ユーザーは自分のデータのみアクセス可能
-- APIキーは暗号化して保存（ユーザーごとに分離）
+PdMのMVP仕様に基づき、AIレポート生成機能のAPIエンドポイントを設計する。
 
-### BYOK セキュリティ
-- ユーザーのAPIキーはサーバーサイドで一時利用のみ
-- ログに記録しない
-- リクエスト完了後メモリから破棄
+### 4.1. データモデル
+
+以下のテーブルをSupabase (PostgreSQL) に定義する。
+
+#### `files` テーブル
+ユーザーがアップロードしたファイルを管理する。
+| カラム名     | 型       | 制約                                    | 説明                                      |
+|:-------------|:---------|:----------------------------------------|:------------------------------------------|
+| `id`         | `UUID`   | `PRIMARY KEY`                           | ファイルID                                |
+| `user_id`    | `UUID`   | `NOT NULL`, `REFERENCES users(id)`      | アップロードユーザーID                    |
+| `file_name`  | `TEXT`   | `NOT NULL`                              | 元のファイル名                            |
+| `file_type`  | `TEXT`   | `NOT NULL`                              | MIMEタイプ (e.g., `text/csv`, `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`) |
+| `file_size`  | `INTEGER`| `NOT NULL`                              | ファイルサイズ (バイト)                   |
+| `upload_date`| `TIMESTAMP WITH TIME ZONE` | `NOT NULL`, `DEFAULT NOW()` | アップロード日時                          |
+| `storage_path`| `TEXT`   | `NOT NULL`                              | Supabase Storageのパス                    |
+
+#### `report_tasks` テーブル
+AIレポート生成タスクの進行状況を管理する。
+| カラム名          | 型       | 制約                                    | 説明                                      |
+|:------------------|:---------|:----------------------------------------|:------------------------------------------|
+| `id`              | `UUID`   | `PRIMARY KEY`                           | レポート生成タスクID                      |
+| `user_id`         | `UUID`   | `NOT NULL`, `REFERENCES users(id)`      | タスク実行ユーザーID                      |
+| `file_id`         | `UUID`   | `NOT NULL`, `REFERENCES files(id)`      | 対象ファイルID                            |
+| `instruction`     | `TEXT`   | `NOT NULL`                              | ユーザーの指示プロンプト                  |
+| `status`          | `TEXT`   | `NOT NULL`, `CHECK (status IN ('pending', 'processing', 'completed', 'failed'))` | タスクステータス |
+| `progress`        | `INTEGER`| `NOT NULL`, `DEFAULT 0`                 | 進捗率 (0-100)                            |
+| `created_at`      | `TIMESTAMP WITH TIME ZONE` | `NOT NULL`, `DEFAULT NOW()` | タスク作成日時                            |
+| `completed_at`    | `TIMESTAMP WITH TIME ZONE` | `NULLABLE`                              | タスク完了日時                            |
+| `error_message`   | `TEXT`   | `NULLABLE`                              | エラーメッセージ                          |
+| `report_id`       | `UUID`   | `NULLABLE`, `REFERENCES reports(id)`    | 生成されたレポートID (完了時のみ)         |
+
+#### `reports` テーブル
+生成されたAIレポートの内容を管理する。
+| カラム名          | 型       | 制約                                    | 説明                                      |
+|:------------------|:---------|:----------------------------------------|:------------------------------------------|
+| `id`              | `UUID`   | `PRIMARY KEY`                           | レポートID                                |
+| `task_id`         | `UUID`   | `NOT NULL`, `REFERENCES report_tasks(id)` | 関連するレポート生成タスクID              |
+| `user_id`         | `UUID`   | `NOT NULL`, `REFERENCES users(id)`      | レポート所有ユーザーID                    |
+| `title`           | `TEXT`   | `NOT NULL`                              | レポートタイトル                          |
+| `content_markdown`| `TEXT`   | `NOT NULL`                              | レポート本文 (Markdown形式)               |
+| `content_pdf_url` | `TEXT`   | `NULLABLE`                              | PDFレポートのURL                          |
+| `created_at`      | `TIMESTAMP WITH TIME ZONE` | `NOT NULL`, `DEFAULT NOW()` | レポート作成日時                          |
+
+### 4.2. APIエンドポイント
+
+Cloudflare Workers (Hono) で以下のAPIエンドポイントを提供する。
+
+#### 1. ファイルアップロード
+- **パス**: `/api/reports/upload`
+- **メソッド**: `POST`
+- **説明**: CSV/Excelファイルをアップロードし、レポート生成の準備をする。
+- **リクエスト**: `multipart/form-data`
+  - `file`: アップロードするバイナリファイルデータ
+- **レスポンス (200 OK)**:
+  ```json
+  {
+    "id": "string (UUID)",
+    "user_id": "string (UUID)",
+    "file_name": "string",
+    "file_type": "string (MIMEタイプ)",
+    "file_size": "integer (バイト)",
+    "upload_date": "string (ISO 8601)",
+    "storage_path": "string"
+  }
+  ```
+- **エラーレスポンス (400 Bad Request)**:
+  ```json
+  {
+    "error": "string (エラーメッセージ)"
+  }
+  ```
+
+#### 2. レポート生成指示
+- **パス**: `/api/reports/generate`
+- **メソッド**: `POST`
+- **説明**: アップロードされたファイルとユーザーの指示に基づいてAIレポート生成を開始する。
+- **リクエスト (application/json)**:
+  ```json
+  {
+    "file_id": "string (UUID)",
+    "instruction": "string (例: 今月の売上を部門別にまとめて。特に利益率の高い部門を教えて)"
+  }
+  ```
+- **レスポンス (202 Accepted)**:
+  ```json
+  {
+    "id": "string (UUID)",
+    "user_id": "string (UUID)",
+    "file_id": "string (UUID)",
+    "instruction": "string",
+    "status": "pending",
+    "progress": 0,
+    "created_at": "string (ISO 8601)",
+    "completed_at": null,
+    "error_message": null,
+    "report_id": null
+  }
+  ```
+- **エラーレスポンス (400 Bad Request)**:
+  ```json
+  {
+    "error": "string (エラーメッセージ)"
+  }
+  ```
+
+#### 3. レポート生成ステータス取得
+- **パス**: `/api/reports/{task_id}/status`
+- **メソッド**: `GET`
+- **説明**: 指定されたレポート生成タスクの現在のステータスと進捗を取得する。
+- **リクエスト**: なし
+- **レスポンス (200 OK)**:
+  ```json
+  {
+    "status": "string (pending|processing|completed|failed)",
+    "progress": "integer (0-100)",
+    "report_id": "string (UUID, if completed)",
+    "error_message": "string (if failed)"
+  }
+  ```
+- **エラーレスポンス (404 Not Found)**:
+  ```json
+  {
+    "error": "string (タスクが見つかりません)"
+  }
+  ```
+
+#### 4. レポート取得
+- **パス**: `/api/reports/{report_id}`
+- **メソッド**: `GET`
+- **説明**: 生成されたAIレポートの内容を取得する。
+- **リクエスト**: なし
+- **レスポンス (200 OK)**:
+  ```json
+  {
+    "id": "string (UUID)",
+    "task_id": "string (UUID)",
+    "user_id": "string (UUID)",
+    "title": "string",
+    "content_markdown": "string (Markdown形式のレポート本文)",
+    "content_pdf_url": "string (PDFレポートのURL, nullable)",
+    "created_at": "string (ISO 8601)"
+  }
+  ```
+- **エラーレスポンス (404 Not Found)**:
+  ```json
+  {
+    "error": "string (レポートが見つかりません)"
+  }
+  ```
+
+#### 5. レポート履歴取得
+- **パス**: `/api/reports`
+- **メソッド**: `GET`
+- **説明**: ユーザーが生成したすべてのレポートの履歴を取得する。
+- **リクエスト**: なし
+- **レスポンス (200 OK)**:
+  ```json
+  {
+    "reports": [
+      {
+        "id": "string (UUID)",
+        "task_id": "string (UUID)",
+        "user_id": "string (UUID)",
+        "title": "string",
+        "content_markdown": "string (Markdown形式のレポート本文)",
+        "content_pdf_url": "string (PDFレポートのURL, nullable)",
+        "created_at": "string (ISO 8601)"
+      }
+      // ... 他のレポート
+    ]
+  }
+  ```
+- **エラーレスポンス (500 Internal Server Error)**:
+  ```json
+  {
+    "error": "string (エラーメッセージ)"
+  }
+  ```
 
 ## 5. 開発規約
 
@@ -129,11 +297,4 @@
 ## 8. ファイル処理方針
 
 ### Excelファイルの処理
-- **方針**: クライアントサイドでのパース
-- **理由**: Cloudflare WorkersはNode.jsのファイルシステムAPIに制限があり、`xlsx` 等のライブラリが動作しないため。クライアントサイドで処理することで、Workersの制約を回避し、追加コストなしで機能を実現する。
-- **実装**: Reactコンポーネント内で `FileReader` APIと `xlsx` ライブラリ（または同等の軽量ライブラリ）を使用してExcelファイルを読み込み、JSON形式に変換。変換されたデータはAPI経由でWorkersに送信する。
-
-### PDFファイルの生成
-- **方針**: クライアントサイドでの生成
-- **理由**: Workers環境でPDF生成ライブラリを動作させるのは困難であり、外部サービスを利用するとコストが発生するため。
-- **実装**: `jsPDF` や `react-pdf` などのクライアントサイドライブラリを用いて、ブラウザ上でPDFを生成し、ダウンロードさせる。
+Cloudflare WorkersはNode.jsのファイルシステム
