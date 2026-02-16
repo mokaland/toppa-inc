@@ -46,33 +46,262 @@ Q1四半期計画に基づき、以下の3つのMVP機能を定義する。
         - 「レポートを生成中です。数秒お待ちください...」などのメッセージ
         - 生成キャンセルボタン（任意）
     6.  `レポート表示画面`:
-        - 生成されたレポートのタイトル
-        - AIが生成したレポート本文（Markdown形式で整形されたテキスト、グラフ画像など）
-        - レポート内容に対する追加質問入力エリア
-        - 「PDFでダウンロード」ボタン
-        - 「Markdownでダウンロード」ボタン
-        - 「レポートを保存」ボタン
+        - 生成されたレポートの表示（Markdown形式またはHTML形式）
+        - ダウンロードボタン（PDF/Markdown形式）
+        - 印刷ボタン
+        - 「このレポートについて質問する」チャット入力エリア
+        - 「保存する」ボタン（任意）
+    7.  `過去のレポート一覧画面`:
+        - レポートのタイトル、生成日時、元ファイル名、ステータスの一覧表示
+        - 検索・絞り込み機能
+        - 各レポートの詳細画面へのリンク
+- **データモデル設計**:
+    - **`reports` テーブル**:
+        - `id`: UUID (Primary Key) - レポートの一意なID
+        - `user_id`: UUID (Foreign Key to `auth.users`) - レポートを生成したユーザーID
+        - `title`: VARCHAR(255) - レポートのタイトル
+        - `original_file_name`: VARCHAR(255) - アップロードされた元ファイル名
+        - `stored_file_path`: TEXT - アップロードされたファイルのストレージパス
+        - `prompt`: TEXT - ユーザーが入力した分析指示
+        - `generated_content`: TEXT - AIが生成したレポートの本文（Markdown形式）
+        - `output_format`: VARCHAR(50) - 出力形式（例: `pdf`, `markdown`, `json`）
+        - `status`: VARCHAR(50) - レポート生成ステータス（例: `pending`, `processing`, `completed`, `failed`）
+        - `created_at`: TIMESTAMPTZ (DEFAULT NOW()) - レポート生成リクエスト日時
+        - `updated_at`: TIMESTAMPTZ (DEFAULT NOW()) - 最終更新日時
+        - `download_url`: TEXT - 生成されたレポートのダウンロードURL
+- **APIエンドポイント設計**:
+    - **`POST /api/report/upload`**: ファイルアップロード
+        - **説明**: CSVまたはExcelファイルをアップロードし、一時保存する。
+        - **リクエスト**: `multipart/form-data`
+            - `file`: アップロードするファイル
+            - `user_id`: ユーザーID (認証情報から取得)
+        - **レスポンス**: `200 OK`
+            - `file_id`: 一時保存されたファイルの一意なID
+            - `file_name`: アップロードされたファイル名
+            - `file_size`: ファイルサイズ
+            - `file_type`: ファイルタイプ
+    - **`POST /api/report/generate`**: レポート生成
+        - **説明**: アップロードされたファイルと自然言語の指示に基づいてAIレポートを生成する。
+        - **リクエスト**: `application/json`
+            - `file_id`: アップロード時に返されたファイルID
+            - `prompt`: 自然言語での分析指示
+            - `output_format`: 出力形式（例: `pdf`, `markdown`, `json`） - 複数選択可
+            - `report_title`: レポートのタイトル（任意）
+            - `chart_types`: 希望するグラフの種類（例: `bar_chart`, `pie_chart`, `line_chart`） - 複数選択可
+        - **レスポンス**: `200 OK`
+            - `report_id`: 生成されたレポートの一意なID
+            - `report_url`: 生成されたレポートのダウンロードURL（PDFの場合など）
+            - `preview_content`: レポートのプレビュー内容（Markdown形式など）
+            - `status`: レポート生成ステータス
+    - **`GET /api/report/history`**: レポート履歴取得
+        - **説明**: ユーザーが過去に生成したレポートの一覧を取得する。
+        - **リクエスト**: (認証情報のみ)
+        - **レスポンス**: `200 OK`
+            - `reports`: レポートオブジェクトの配列
+                - `report_id`: レポートID
+                - `title`: レポートタイトル
+                - `created_at`: 生成日時
+                - `status`: レポートの状態（例: `completed`, `failed`）
+                - `original_file_name`: 元ファイル名
+                - `download_url`: ダウンロードURL
+    - **`GET /api/report/:report_id`**: 特定レポート詳細取得
+        - **説明**: 特定のレポートの詳細情報とコンテンツを取得する。
+        - **リクエスト**: `report_id` (パスパラメータ)
+        - **レスポンス**: `200 OK`
+            - `report_id`: レポートID
+            - `title`: レポートタイトル
+            - `generated_content`: レポートの全内容
+            - `download_url`: レポートのダウンロードURL
+            - `original_file_name`: 元ファイル名
+
+### 2.2. テンプレート書類生成
+
+- **機能概要**: 見積書・請求書・お礼状などのテンプレートを用意し、自然言語で指示することでAIが情報を流し込み、書類を生成する。
+- **ユーザーストーリー**:
+    - 経営者として、「○○建設さんへ、屋根修理の見積書を作って。金額は35万円」と言いたい。書類作成に30分かかるのを3分にするため。
+    - 経営者として、作成された見積書をプレビューで確認してから確定したい。間違いがあると信用問題だから。
+    - 経営者として、複数のテンプレートから最適なものを選択したい。用途に合わせて使い分けたいから。
+    - 経営者として、生成された書類をPDFでダウンロードしたい。顧客にメールで送るため。
+    - 経営者として、過去に作成した書類を検索・参照したい。「先月の○○社の見積書どこだっけ？」をなくすため。
+- **画面遷移**:
+    1. `ダッシュボード`:
+        - 書類生成機能への導線ボタン
+        - 過去の書類履歴へのリンク
+    2. `書類生成トップ`:
+        - 「テンプレートから書類を生成」ボタン
+        - 「過去の書類を見る」ボタン
+    3. `テンプレート選択画面`:
+        - 利用可能なテンプレートの一覧表示（見積書、請求書、契約書、お礼状など）
+        - テンプレートのプレビュー
+        - テンプレート選択ボタン
+    4. `情報入力画面`:
+        - 自然言語での指示入力テキストエリア（例: 「○○社向けに、△△の見積書を。金額は□□円で。」）
+        - またはフォーム形式での入力補助（宛先、件名、金額、項目など）
+        - 「プレビュー」ボタン
+    5. `プレビュー画面`:
+        - AIが生成した書類のプレビュー表示
+        - 編集機能（軽微な修正）
+        - 「確定して生成」ボタン
         - 「戻る」ボタン
-    7.  `レポート履歴画面`:
-        - 過去に生成・保存されたレポートの一覧（タイトル、生成日時、ファイル名）
-        - 各レポートへのリンク
-        - 検索・フィルタリング機能（任意）
-- **データモデル**:
-    - `reports` テーブル: 生成されたレポートのメタ情報と結果を保存。
-        - `id`: UUID (Primary Key) - レポートの一意な識別子
-        - `user_id`: UUID (Foreign Key to `auth.users`) - レポートを生成したユーザーのID
-        - `title`: VARCHAR(255) - レポートのタイトル（例: 「2026年1月度 売上レポート」）
-        - `original_file_name`: VARCHAR(255) - アップロードされた元のファイル名
-        - `storage_file_path`: TEXT - アップロードされたファイルが保存されているストレージパス（Supabase Storageなど）
-        - `analysis_prompt`: TEXT - ユーザーが入力した分析指示のプロンプト
-        - `generated_report_content`: TEXT - AIが生成したレポートの本文（Markdown形式）
-        - `generated_chart_urls`: JSONB (nullable) - 生成されたグラフ画像のURLリスト（例: `["url1", "url2"]`）
-        - `status`: VARCHAR(50) - レポートの生成ステータス（例: 'pending', 'processing', 'completed', 'failed'）
-        - `created_at`: TIMESTAMPTZ (Default NOW()) - レポート生成リクエスト日時
-        - `updated_at`: TIMESTAMPTZ (Default NOW()) - レポート情報最終更新日時
-- **APIエンドポイント**:
-    - `POST /api/report/generate`: レポート生成
-    - `GET /api/reports/history`: レポート履歴取得
-    - `GET /api/reports/:reportId`: 特定レポート詳細取得
-- **非機能要件**:
-    - 大容量ファイル（例: 100MBま...（1500文字省略）
+    6. `書類生成完了画面`:
+        - 「書類が生成されました」メッセージ
+        - ダウンロードボタン（PDF形式）
+        - メール送信ボタン（Phase 2）
+        - 「過去の書類を見る」ボタン
+    7. `過去の書類一覧画面`:
+        - 書類のタイトル、作成日時、種類、宛先の一覧表示
+        - 検索・絞り込み機能
+        - 各書類の詳細画面へのリンク
+- **データモデル設計**:
+    - **`documents` テーブル**:
+        - `id`: UUID (Primary Key) - 書類の一意なID
+        - `user_id`: UUID (Foreign Key to `auth.users`) - 書類を生成したユーザーID
+        - `template_id`: UUID (Foreign Key to `document_templates`) - 使用したテンプレートID
+        - `title`: VARCHAR(255) - 書類のタイトル
+        - `recipient`: VARCHAR(255) - 宛先
+        - `generated_content`: TEXT - AIが生成した書類の本文
+        - `output_format`: VARCHAR(50) - 出力形式（例: `pdf`）
+        - `status`: VARCHAR(50) - 書類生成ステータス
+        - `created_at`: TIMESTAMPTZ (DEFAULT NOW()) - 書類生成日時
+        - `updated_at`: TIMESTAMPTZ (DEFAULT NOW()) - 最終更新日時
+        - `download_url`: TEXT - 生成された書類のダウンロードURL
+    - **`document_templates` テーブル**:
+        - `id`: UUID (Primary Key) - テンプレートの一意なID
+        - `name`: VARCHAR(255) - テンプレート名
+        - `type`: VARCHAR(50) - テンプレートの種類（例: `quotation`, `invoice`, `thank_you_letter`）
+        - `content_template`: TEXT - テンプレートのひな形（MarkdownまたはHTML）
+        - `created_at`: TIMESTAMPTZ (DEFAULT NOW())
+        - `updated_at`: TIMESTAMPTZ (DEFAULT NOW())
+- **APIエンドポイント設計**:
+    - **`GET /api/templates`**: テンプレート一覧取得
+        - **説明**: 利用可能な書類テンプレートの一覧を取得する。
+        - **リクエスト**: (認証情報のみ)
+        - **レスポンス**: `200 OK`
+            - `templates`: テンプレートオブジェクトの配列
+                - `template_id`: テンプレートID
+                - `name`: テンプレート名
+                - `type`: テンプレートの種類
+                - `preview_url`: テンプレートのプレビューURL
+    - **`POST /api/document/generate`**: 書類生成
+        - **説明**: 選択されたテンプレートと入力情報に基づいてAI書類を生成する。
+        - **リクエスト**: `application/json`
+            - `template_id`: 使用するテンプレートID
+            - `prompt`: 自然言語での指示
+            - `data`: フォーム形式で入力されたデータ（任意）
+            - `output_format`: 出力形式（例: `pdf`）
+            - `document_title`: 書類のタイトル（任意）
+        - **レスポンス**: `200 OK`
+            - `document_id`: 生成された書類の一意なID
+            - `download_url`: 生成された書類のダウンロードURL
+            - `preview_content`: 書類のプレビュー内容
+            - `status`: 書類生成ステータス
+    - **`GET /api/document/history`**: 書類履歴取得
+        - **説明**: ユーザーが過去に生成した書類の一覧を取得する。
+        - **リクエスト**: (認証情報のみ)
+        - **レスポンス**: `200 OK`
+            - `documents`: 書類オブジェクトの配列
+                - `document_id`: 書類ID
+                - `title`: 書類タイトル
+                - `created_at`: 生成日時
+                - `status`: 書類の状態
+                - `recipient`: 宛先
+                - `download_url`: ダウンロードURL
+    - **`GET /api/document/:document_id`**: 特定書類詳細取得
+        - **説明**: 特定の書類の詳細情報とコンテンツを取得する。
+        - **リクエスト**: `document_id` (パスパラメータ)
+        - **レスポンス**: `200 OK`
+            - `document_id`: 書類ID
+            - `title`: 書類タイトル
+            - `generated_content`: 書類の全内容
+            - `download_url`: ダウンロードURL
+            - `recipient`: 宛先
+
+### 2.3. チャットアシスタント
+
+- **機能概要**: 何でも聞ける経営者向けAIチャット。事業に関する質問、アドバイス、文章作成など、経営者の"詰み"に特化したシステムプロンプトで応答する。
+- **ユーザーストーリー**:
+    - 経営者として、「この契約書の注意点を教えて」と相談したい。弁護士に聞くほどでもないが不安だから。
+    - 経営者として、過去の会話履歴を保持してほしい。同じ質問を繰り返したくないから。
+    - 経営者として、スマホからでもチャットしたい。移動中や現場で急ぎの相談があるから。
+    - 経営者として、AIからの回答が経営者の視点に立っていると安心する。的確なアドバイスがほしいから。
+    - 経営者として、機密情報が安全に扱われると信頼できる。事業の相談だから。
+- **画面遷移**:
+    1. `ダッシュボード`:
+        - チャットアシスタント機能への導線ボタン
+    2. `チャット画面`:
+        - 過去の会話履歴表示エリア
+        - メッセージ入力テキストエリア
+        - 送信ボタン
+        - 音声入力ボタン（Phase 2）
+        - 新規チャット開始ボタン
+- **データモデル設計**:
+    - **`chat_sessions` テーブル**:
+        - `id`: UUID (Primary Key) - チャットセッションの一意なID
+        - `user_id`: UUID (Foreign Key to `auth.users`) - セッションを開始したユーザーID
+        - `title`: VARCHAR(255) - セッションのタイトル（AIが自動生成）
+        - `created_at`: TIMESTAMPTZ (DEFAULT NOW())
+        - `updated_at`: TIMESTAMPTZ (DEFAULT NOW())
+    - **`chat_messages` テーブル**:
+        - `id`: UUID (Primary Key) - メッセージの一意なID
+        - `session_id`: UUID (Foreign Key to `chat_sessions`) - 所属するチャットセッションID
+        - `role`: VARCHAR(10) - メッセージの送信者（`user` または `assistant`）
+        - `content`: TEXT - メッセージ本文
+        - `created_at`: TIMESTAMPTZ (DEFAULT NOW())
+- **APIエンドポイント設計**:
+    - **`POST /api/chat`**: チャットメッセージ送信・AI応答取得
+        - **説明**: ユーザーからのメッセージを送信し、AIからの応答を取得する。
+        - **リクエスト**: `application/json`
+            - `session_id`: 現在のチャットセッションID（新規セッションの場合はnull）
+            - `message`: ユーザーが入力したメッセージ
+        - **レスポンス**: `200 OK`
+            - `session_id`: チャットセッションID
+            - `assistant_message`: AIからの応答メッセージ
+            - `message_id`: AI応答メッセージのID
+    - **`GET /api/chat/history`**: 会話履歴取得
+        - **説明**: ユーザーのチャットセッション履歴一覧を取得する。
+        - **リクエスト**: (認証情報のみ)
+        - **レスポンス**: `200 OK`
+            - `sessions`: チャットセッションオブジェクトの配列
+                - `session_id`: セッションID
+                - `title`: セッションタイトル
+                - `last_message_at`: 最新メッセージ日時
+    - **`GET /api/chat/history/:session_id`**: 特定セッションの会話履歴取得
+        - **説明**: 特定のチャットセッションの全メッセージ履歴を取得する。
+        - **リクエスト**: `session_id` (パスパラメータ)
+        - **レスポンス**: `200 OK`
+            - `messages`: メッセージオブジェクトの配列
+                - `message_id`: メッセージID
+                - `role`: 送信者
+                - `content`: メッセージ本文
+                - `created_at`: 送信日時
+
+## 3. 非機能要件
+
+- **レスポンス**: チャット応答3秒以内、レポート/書類生成はファイルサイズ・複雑度によるが最大30秒以内
+- **可用性**: 99.5%以上
+- **セキュリティ**: データ暗号化（at-rest, in-transit）、SOC2準拠を目指す。ユーザーデータは厳重に管理し、AIモデルへの入力は匿名化または機密情報を除外する。
+- **対応ブラウザ**: Chrome, Safari, Edge（最新2バージョン）
+- **スマホ**: iOS Safari, Android Chrome 対応
+- **スケーラビリティ**: Cloudflare WorkersとSupabaseにより、大量のリクエストにも対応可能なアーキテクチャとする。
+
+## 4. 差別化ポイント
+
+| 競合 | ツミキリの優位性 |
+|------|-----------------|
+| ChatGPT / Claude | 経営者特化のUI。書類テンプレート。データ管理機能。機密情報保護に配慮した設計。 |
+| freee / マネーフォワード | AI自然言語操作による柔軟な事務作業対応。会計以外の幅広い業務をカバー。 |
+| 事務代行サービス | 月額¥2,980で24時間対応。人件費の1/10以下のコストで、高速かつ正確な処理。 |
+
+## 5. 収益モデル
+
+| プラン | 価格 | 内容 |
+|--------|------|------|
+| Free | ¥0 | 月10タスク、基本テンプレート3種、データ保持7日 |
+| Pro | ¥2,980/月 | 無制限タスク、全テンプレート、データ保持90日、優先サポート |
+| BYOK | ¥0（APIキー自前） | Pro機能利用可、API費用は自己負担、データ保持90日 |
+
+## 6. 成功指標
+
+- ローンチ1ヶ月: ユーザー登録100名、有料転換5名
+- ローンチ3ヶ月: ユーザー登録500名、有料転換25名、MRR ¥74,500
+- NPS: 40以上（経営者からの推薦意向）
