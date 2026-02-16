@@ -54,204 +54,228 @@
               ├── 処理中画面（プログレスバー、処理状況メッセージ）
               │     └── 処理キャンセルボタン（任意）
               └── レポート表示画面
-                    ├── 生成されたレポート本文（Markdown形式で表示）
-                    ├── PDFダウンロードボタン
-                    └── Markdownダウンロードボタン
-                    └── 新しいレポート作成ボタン
+                    ├── 生成されたレポートの表示エリア
+                    ├── ダウンロードボタン（PDF/Markdown形式）
+                    └── 履歴一覧へのリンク
 
-#### データモデル
-Founding Engineerの[実装計画](docs/implementation-plan.md)における `reports` テーブルを参照。
-- `user_id`: レポートを生成したユーザーID
-- `title`: レポートのタイトル（AIが生成、またはユーザーが指定）
-- `file_name`: アップロードされたファイル名
-- `file_url`: Supabase Storageに保存されたファイルのURL
-- `prompt`: ユーザーが入力した自然言語の指示
-- `result`: AIが生成したレポート本文（Markdown形式）
-- `status`: レポート生成のステータス（pending, processing, completed, failed）
-- `created_at`: レポート生成日時
+#### データモデル（Supabase PostgreSQL）
 
-#### APIエンドポイント
-Founding Engineerの[実装計画](docs/implementation-plan.md)における `/api/report/generate` を参照。
-- **POST `/api/report/generate`**:
-    - **Request**:
-        - `file`: アップロードするファイル（CSVまたはExcel）
-        - `prompt`: 自然言語による指示（例: "先月の売上をまとめて"）
-    - **Response**:
-        - `report_id`: 生成中のレポートID
-        - `status`: "processing"
-- **GET `/api/report/status/:reportId`**:
-    - **Request**:
-        - `reportId`: レポートID
-    - **Response**:
-        - `status`: レポート生成のステータス
-        - `result`: (statusが"completed"の場合) レポート本文（Markdown）
-        - `pdf_url`: (statusが"completed"の場合) 生成されたPDFレポートのURL
+```sql
+-- レポート履歴テーブル
+CREATE TABLE reports (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+    title VARCHAR(255) NOT NULL,
+    file_name VARCHAR(255),
+    file_url TEXT, -- アップロードされたファイルのURL (Supabase Storage)
+    prompt TEXT NOT NULL, -- ユーザーの指示プロンプト
+    result TEXT, -- AIが生成したレポート内容 (Markdown形式)
+    status VARCHAR(50) NOT NULL DEFAULT 'processing', -- 'processing', 'completed', 'failed'
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- RLS有効化
+ALTER TABLE reports ENABLE ROW LEVEL SECURITY;
+
+-- ユーザーポリシー
+CREATE POLICY "Users can view own reports"
+    ON reports FOR SELECT
+    USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can insert own reports"
+    ON reports FOR INSERT
+    WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "Users can update own reports"
+    ON reports FOR UPDATE
+    USING (auth.uid() = user_id)
+    WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "Users can delete own reports"
+    ON reports FOR DELETE
+    USING (auth.uid() = user_id);
+```
+
+#### APIエンドポイント設計
+
+| エンドポイント | Method | 機能 |
+|---------------|--------|------|
+| `/api/reports/upload` | POST | CSV/Excelファイルアップロード |
+| `/api/reports/generate` | POST | AIレポート生成指示（ファイルIDとプロンプトを送信） |
+| `/api/reports/:id` | GET | 特定レポートの詳細取得 |
+| `/api/reports` | GET | 全レポート履歴取得 |
+| `/api/reports/:id/download/pdf` | GET | レポートのPDFダウンロード |
+| `/api/reports/:id/download/md` | GET | レポートのMarkdownダウンロード |
 
 #### 非機能要件
-- レポート生成時間：ファイルサイズによるが、最大30秒以内（目標20秒以内）
-- 対応ファイル形式：CSV, Excel (xlsx, xls)。Founding Engineerの検討結果に基づき、`wrangler`によるバンドルと`node_compat = true`の設定で`xlsx`ライブラリを導入し、堅牢なExcelファイル解析を目指す。
-- ファイルサイズ上限：10MB
-- 同時処理数：ユーザーあたり1件まで（複数ファイルアップロード時はキューで処理）
-- レポート出力形式：PDF, Markdown
-- AI応答のトーン＆マナー：ビジネスシーンに合わせた丁寧で客観的な口調。事実に基づいた分析結果を提示し、推測や感情的な表現は避ける。
+- **ファイルサイズ**: 最大10MBまでのCSV/Excelファイルをサポート。
+- **処理速度**: ファイルアップロードからレポート表示まで、平均10秒以内。大規模データでも30秒以内。
+- **対応フォーマット**: CSV, XLSX, XLSに対応。
+- **エラーハンドリング**: ファイル形式エラー、AI生成エラーなどをユーザーに分かりやすく通知。
 
 ### 機能2: テンプレート書類生成
 
 #### ユーザーストーリー
-- 経営者として、「○○社に見積書を送って。金額は35万円、納期は2週間後」のように自然言語で指示したい。書類作成に30分かかるのを3分にするため。
-- 経営者として、AIが作った書類をプレビューしてから確定したい。間違いがあると信用問題だから。
-- 経営者として、よく使う書類テンプレートを登録・編集したい。自社のフォーマットに合わせて効率化するため。
+- 経営者として、「○○建設さんへ、屋根修理の見積書を作って。金額は35万円」のように自然言語で指示したい。書類作成に30分かかるのを3分にするため。
+- 経営者として、AIが生成した書類をプレビューで確認してから確定したい。間違いがあると信用問題になるため。
+- 経営者として、生成した書類をPDFでダウンロードしたい。紙での提出やメール添付で送付するため。
+- 経営者として、よく使う書類のテンプレートを登録・編集したい。自社のフォーマットに合わせて効率的に書類を作成するため。
+- 経営者として、過去に生成した書類を検索・参照したい。「先月の○○社の見積書どこだっけ？」をなくすため。
 
 #### 画面遷移
 ダッシュボード → 書類生成
               ├── テンプレート選択画面（見積書、請求書、お礼状など一覧表示）
+              │     └── テンプレート選択 → 情報入力画面へ
               ├── 情報入力画面（自然言語入力フィールド、またはフォーム）
-              │     └── プレビューボタン
+              │     ├── 自然言語で指示入力後、AIがフォームを自動補完
+              │     └── フォームで直接入力も可能
+              │     └── プレビューボタン押下でプレビュー画面へ
               └── プレビュー画面
-                    ├── 生成された書類内容の表示
-                    ├── PDF出力ボタン
-                    └── 修正に戻るボタン
+                    ├── 生成された書類の表示
+                    ├── 修正ボタン（情報入力画面に戻る）
+                    └── PDF出力ボタン
 
-#### データモデル
-Founding Engineerの[実装計画](docs/implementation-plan.md)における `documents` テーブルを参照。
-- `id`: 書類ID
-- `user_id`: ユーザーID
-- `template_id`: 使用したテンプレートID
-- `title`: 書類タイトル
-- `content`: 生成された書類本文
-- `status`: 書類生成のステータス
-- `created_at`: 作成日時
+#### データモデル（Supabase PostgreSQL）
 
-#### APIエンドポイント
-Founding Engineerの[実装計画](docs/implementation-plan.md)における `/api/document/generate` を参照。
-- **POST `/api/document/generate`**:
-    - **Request**:
-        - `template_id`: テンプレートID
-        - `prompt`: 自然言語による指示
-    - **Response**:
-        - `document_id`: 生成された書類ID
-        - `preview_url`: プレビュー用URL
-- **GET `/api/document/:documentId/pdf`**:
-    - **Request**:
-        - `documentId`: 書類ID
-    - **Response**:
-        - PDFファイル
+```sql
+-- 書類テンプレートテーブル
+CREATE TABLE document_templates (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+    template_name VARCHAR(255) NOT NULL,
+    template_content TEXT NOT NULL, -- Markdown形式またはHTML形式でテンプレート内容を保存
+    template_type VARCHAR(50) NOT NULL, -- '見積書', '請求書', 'お礼状' など
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 生成された書類テーブル
+CREATE TABLE generated_documents (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+    template_id UUID REFERENCES document_templates(id) ON DELETE SET NULL,
+    document_name VARCHAR(255) NOT NULL,
+    generated_content TEXT NOT NULL, -- 生成された書類の最終内容
+    pdf_url TEXT, -- 生成されたPDFのURL
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- RLS有効化
+ALTER TABLE document_templates ENABLE ROW LEVEL SECURITY;
+ALTER TABLE generated_documents ENABLE ROW LEVEL SECURITY;
+
+-- ユーザーポリシー (document_templates)
+CREATE POLICY "Users can view own templates"
+    ON document_templates FOR SELECT
+    USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can insert own templates"
+    ON document_templates FOR INSERT
+    WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "Users can update own templates"
+    ON document_templates FOR UPDATE
+    USING (auth.uid() = user_id)
+    WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "Users can delete own templates"
+    ON document_templates FOR DELETE
+    USING (auth.uid() = user_id);
+
+-- ユーザーポリシー (generated_documents)
+CREATE POLICY "Users can view own generated documents"
+    ON generated_documents FOR SELECT
+    USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can insert own generated documents"
+    ON generated_documents FOR INSERT
+    WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "Users can update own generated documents"
+    ON generated_documents FOR UPDATE
+    USING (auth.uid() = user_id)
+    WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "Users can delete own generated documents"
+    ON generated_documents FOR DELETE
+    USING (auth.uid() = user_id);
+```
+
+#### APIエンドポイント設計
+
+| エンドポイント | Method | 機能 |
+|---------------|--------|------|
+| `/api/documents/templates` | GET | 登録済みテンプレート一覧取得 |
+| `/api/documents/templates` | POST | 新規テンプレート登録 |
+| `/api/documents/templates/:id` | GET | 特定テンプレート詳細取得 |
+| `/api/documents/templates/:id` | PUT | テンプレート更新 |
+| `/api/documents/templates/:id` | DELETE | テンプレート削除 |
+| `/api/documents/generate` | POST | 自然言語指示またはフォーム入力で書類生成 |
+| `/api/documents/generated` | GET | 生成済み書類一覧取得 |
+| `/api/documents/generated/:id` | GET | 特定の生成済み書類詳細取得 |
+| `/api/documents/generated/:id/pdf` | GET | 生成済み書類のPDFダウンロード |
 
 #### 非機能要件
-- 書類生成時間：最大10秒以内
-- 対応テンプレート：見積書、請求書、お礼状、契約書（簡易版）
-- プレビュー機能：PDF形式で表示
-- AI応答のトーン＆マナー：ビジネス文書として適切な敬語とフォーマルな表現を用いる。
+- **応答速度**: 書類生成APIは5秒以内。テンプレート一覧取得は1秒以内。
+- **セキュリティ**: テンプレート内容や生成済み書類はユーザーごとに厳密にアクセス制御。Supabase RLSを適切に設定。
+- **拡張性**: 将来的にWord/Google Docs形式での出力にも対応できるよう、中間表現を考慮した設計。
+- **プレビュー精度**: 生成された書類のプレビューは、最終PDF出力とほぼ同一のレイアウト・内容であること。
 
 ### 機能3: チャットアシスタント
 
 #### ユーザーストーリー
-- 経営者として、「この契約書の注意点を教えて」と相談したい。弁護士に聞くほどでもないが不安だから。
-- 経営者として、事業に関する質問（例: 「新しい事業のアイデア、市場規模は？」）をAIに相談したい。壁打ち相手として活用するため。
-- 経営者として、過去の会話履歴を保持してほしい。同じ質問を繰り返す手間を省くため。
-- 経営者として、スマホからでも操作したい。現場や移動中に気軽に相談できるようにするため。
+- 経営者として、何でも聞けるAIチャットで事業に関する質問やアドバイスを受けたい。経営の"詰み"を相談し、解決策のヒントを得るため。
+- 経営者として、過去の会話履歴を保持してほしい。同じ質問を繰り返す手間を省き、文脈を理解した応答を得るため。
+- 経営者として、チャットの応答が自然で、まるで人間と話しているような体験をしたい。ストレスなくスムーズにコミュニケーションを取るため。
+- 経営者として、チャットで文章作成やアイデア出しを手伝ってほしい。マーケティング文言や企画書の骨子など、多岐にわたる業務に活用するため。
 
 #### 画面遷移
-ダッシュボード → チャット画面
-              ├── 会話履歴リスト（左サイドバー）
-              ├── チャット入力フィールド
-              ├── 送信ボタン
-              └── AI応答表示エリア
+ダッシュボード → チャット
+              ├── 会話履歴一覧（過去のチャットセッションを一覧表示）
+              │     └── セッション選択 → 特定セッションの会話表示へ
+              ├── 特定セッションの会話表示
+              │     ├── ユーザー入力フォーム
+              │     ├── AI応答表示エリア
+              │     └── 送信ボタン
+              └── 新規チャット開始ボタン
 
-#### データモデル
-Founding Engineerの[実装計画](docs/implementation-plan.md)における `chat_messages` テーブルを参照。
-- `id`: メッセージID
-- `user_id`: ユーザーID
-- `role`: `user` または `assistant`
-- `content`: メッセージ本文
-- `created_at`: メッセージ送信日時
+#### データモデル（Supabase PostgreSQL）
 
-#### APIエンドポイント
-Founding Engineerの[実装計画](docs/implementation-plan.md)における `/api/chat` を参照。
-- **POST `/api/chat`**:
-    - **Request**:
-        - `message`: ユーザーメッセージ
-        - `session_id`: 会話セッションID（新規の場合は空）
-    - **Response**:
-        - `reply`: AIの応答メッセージ
-        - `session_id`: 更新された会話セッションID
-- **GET `/api/chat/history`**:
-    - **Response**:
-        - `sessions`: 会話セッションのリスト（最新のメッセージとIDを含む）
-- **GET `/api/chat/history/:sessionId`**:
-    - **Request**:
-        - `sessionId`: 特定セッションのID
-    - **Response**:
-        - `messages`: そのセッションの全メッセージ履歴
+```sql
+-- 会話履歴テーブル
+CREATE TABLE chat_messages (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+    role VARCHAR(10) NOT NULL CHECK (role IN ('user', 'assistant', 'system')), -- 'user', 'assistant', 'system'
+    content TEXT NOT NULL,
+    session_id UUID NOT NULL, -- 会話セッションを識別するID
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- RLS有効化
+ALTER TABLE chat_messages ENABLE ROW LEVEL SECURITY;
+
+-- ユーザーポリシー
+CREATE POLICY "Users can view own messages"
+    ON chat_messages FOR SELECT
+    USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can insert own messages"
+    ON chat_messages FOR INSERT
+    WITH CHECK (auth.uid() = user_id);
+```
+
+#### APIエンドポイント設計
+
+| エンドポイント | Method | 機能 |
+|---------------|--------|------|
+| `/api/chat` | POST | チャット送信・AI応答取得（新規セッションまたは既存セッションへの追加） |
+| `/api/chat/history` | GET | 全会話セッション履歴の概要取得 |
+| `/api/chat/history/:sessionId` | GET | 特定セッションの会話履歴取得 |
 
 #### 非機能要件
-- レスポンス速度：3秒以内（目標2秒以内）
-- 会話履歴保持期間：90日
-- AI応答のトーン＆マナー：経営者の良き壁打ち相手として、具体的かつ客観的なアドバイスを提供する。専門用語は避け、分かりやすい言葉で説明する。
-
-## 5. ユーザーストーリー（全体）
-
-1. 経営者として、CSVやExcelファイルをアップロードして「今月の売上を部門別にまとめて。特に利益率の高い部門を教えて」のように自然言語で指示したい。事務員に頼む手間を省き、より深い洞察を得るため。
-2. 経営者として、AIが作ったレポートをPDF/Markdownでダウンロードしたい。社内会議資料や取引先への説明資料として活用するため。
-3. 経営者として、データアップロードからレポート生成までの一連の処理状況を画面で確認したい。エラー発生時にも原因を把握し、再試行できるようにするため。
-4. 経営者として、「○○社に見積書を送って。金額は35万円、納期は2週間後」のように自然言語で指示したい。書類作成に30分かかるのを3分にするため。
-5. 経営者として、AIが作った書類をプレビューしてから確定したい。間違いがあると信用問題だから。
-6. 経営者として、よく使う書類テンプレートを登録・編集したい。自社のフォーマットに合わせて効率化するため。
-7. 経営者として、「この契約書の注意点を教えて」と相談したい。弁護士に聞くほどでもないが不安だから。
-8. 経営者として、事業に関する質問（例: 「新しい事業のアイデア、市場規模は？」）をAIに相談したい。壁打ち相手として活用するため。
-9. 経営者として、過去の会話履歴を保持してほしい。同じ質問を繰り返す手間を省くため。
-10. 経営者として、スマホからでも操作したい。現場や移動中に気軽に相談できるようにするため。
-11. 経営者として、自分のAPIキーを使いたい。コストを自分でコントロールするため。
-12. 経営者として、月額の利用料を事前に知りたい。予算オーバーが怖いから。
-13. 経営者として、データが安全に管理されていると安心したい。顧客情報を扱うから。
-
-## 6. 画面遷移（全体）
-
-```
-ログイン → ダッシュボード
-              ├── チャット（機能3）
-              ├── レポート生成（機能1）
-              │     ├── ファイルアップロード画面
-              │     ├── 処理中画面
-              │     └── レポート表示画面 → ダウンロード
-              ├── 書類生成（機能2）
-              │     ├── テンプレート選択画面
-              │     ├── 情報入力画面
-              │     └── プレビュー画面 → PDF出力
-              └── 設定
-                    ├── APIキー設定（BYOK）
-                    ├── プロフィール
-                    └── プラン管理
-```
-
-## 7. 非機能要件（全体）
-
-- レスポンス: チャット応答3秒以内、レポート生成30秒以内、書類生成10秒以内
-- 可用性: 99.5%以上
-- セキュリティ: データ暗号化（at-rest, in-transit）、SOC2準拠を目指す
-- 対応ブラウザ: Chrome, Safari, Edge（最新2バージョン）
-- スマホ: iOS Safari, Android Chrome 対応
-- ファイルサイズ上限: 10MB (レポート生成機能)
-- 同時処理数: ユーザーあたり1件 (レポート生成機能)
-
-## 8. 差別化ポイント
-
-| 競合 | ツミキリの優位性 |
-|------|-----------------|
-| ChatGPT / Claude | 経営者特化のUI。書類テンプレート。データ管理機能 |
-| freee / マネーフォワード | AI自然言語操作。会計以外の事務も対応 |
-| 事務代行サービス | 月額¥2,980で24時間対応。人件費の1/10以下 |
-
-## 9. 収益モデル
-
-| プラン | 価格 | 内容 |
-|--------|------|------|
-| Free | ¥0 | 月10タスク、基本テンプレート3種 |
-| Pro | ¥2,980/月 | 無制限タスク、全テンプレート、データ保持90日 |
-| BYOK | ¥0（APIキー自前） | Pro機能利用可、API費用は自己負担 |
-
-## 10. 成功指標
-
-- ローンチ1ヶ月: ユーザー登録100名、有料転換5名
-- ローンチ3ヶ月: ユーザー登録500名、有料転換25名、MRR ¥74,500
-- NPS: 40以上（経営者からの推薦意向）
+- **応答速度**: 平均3秒以内。
+- **コンテキスト維持**: 過去10ターン程度の会話履歴をAIが記憶し、文脈を維持した応答が可能。
+- **堅牢性**: AIプロバイダーとの連携エラー発生時でも、ユーザーに適切なフィードバックを提供し、再試行を促す。
+- **トーン＆マナー**: 経営者向けに、丁寧かつ的確なアドバイスを提供できるプロンプト設計。
