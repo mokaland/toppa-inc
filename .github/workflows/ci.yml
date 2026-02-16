@@ -1,25 +1,137 @@
-name: CI
+name: CI/CD
+
 on:
   push:
-    branches: [main]
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
 
 jobs:
-  test:
+  # フロントエンド (Cloudflare Pages) のCI
+  frontend_ci:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-      - uses: actions/setup-node@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
           node-version: '20'
-      - name: Install Python deps
-        run: pip install -r requirements.txt 2>/dev/null || true
-      - name: Install Node deps
-        run: npm install 2>/dev/null || true
-      - name: Run Python tests
-        run: python -m pytest tests/ -v 2>/dev/null || echo "No Python tests found"
-      - name: Run Node tests
-        run: npm test 2>/dev/null || echo "No Node tests found"
+          cache: 'npm'
+          cache-dependency-path: 'src/package-lock.json' # フロントエンドの依存関係
+
+      - name: Install frontend dependencies
+        working-directory: ./src # フロントエンドのディレクトリ
+        run: npm ci
+
+      - name: Run frontend Lint
+        working-directory: ./src
+        run: npm run lint
+
+      - name: Run frontend Type Check
+        working-directory: ./src
+        run: npm run typecheck
+
+      - name: Run frontend tests
+        working-directory: ./src
+        run: npm test
+
+  # バックエンド (Cloudflare Workers) のCI
+  backend_ci:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: 'workers/package-lock.json' # バックエンドの依存関係
+
+      - name: Install backend dependencies
+        working-directory: ./workers # バックエンドのディレクトリ
+        run: npm ci
+
+      - name: Run backend Lint
+        working-directory: ./workers
+        run: npm run lint
+
+      - name: Run backend Type Check
+        working-directory: ./workers
+        run: npm run typecheck
+
+      - name: Run backend tests
+        working-directory: ./workers
+        run: npm test
+
+  # Cloudflare Pages (フロントエンド) のデプロイ
+  deploy_frontend:
+    needs: [frontend_ci] # フロントエンドのCIが成功した場合のみ実行
+    if: github.ref == 'refs/heads/main' # mainブランチへのpush時のみ
+    runs-on: ubuntu-latest
+    environment: production # 環境を指定（任意）
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: 'src/package-lock.json'
+
+      - name: Install frontend dependencies
+        working-directory: ./src
+        run: npm ci
+
+      - name: Build frontend
+        working-directory: ./src
+        run: npm run build
+
+      - name: Publish to Cloudflare Pages
+        uses: cloudflare/pages-action@v1
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          projectName: 'tsumikiri-frontend' # プロジェクト名
+          directory: 'src/dist' # ビルド成果物のディレクトリ
+          # githubToken: ${{ secrets.GITHUB_TOKEN }} # 必要であれば
+
+  # Cloudflare Workers (バックエンド) のデプロイ
+  deploy_backend:
+    needs: [backend_ci] # バックエンドのCIが成功した場合のみ実行
+    if: github.ref == 'refs/heads/main' # mainブランチへのpush時のみ
+    runs-on: ubuntu-latest
+    environment: production # 環境を指定（任意）
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: 'workers/package-lock.json'
+
+      - name: Install backend dependencies
+        working-directory: ./workers
+        run: npm ci
+
+      - name: Deploy Cloudflare Worker
+        uses: cloudflare/wrangler-action@v1
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          # workingDirectory: 'workers' # wrangler.tomlがあるディレクトリ。デフォルトはルートなので指定不要
+          # command: 'deploy' # デフォルトはdeployなので指定不要
+          # secrets: # workersで利用するシークレットを渡す場合
+          #   - SUPABASE_URL
+          #   - SUPABASE_ANON_KEY
