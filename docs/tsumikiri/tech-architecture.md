@@ -2,138 +2,117 @@
 
 > 作成: CTO マルコ・ロッシ
 > 日付: 2026-02-16
-> ステータス: ドラフト作成完了
-> レビュー: CEO 高橋レン
+> ステータス: ドラフト
 
-## 1. 概要
-
-本ドキュメントは、TOPPA Inc. の第1弾プロダクトである「ツミキリ」の技術アーキテクチャ設計を定義する。PdMのプロダクト仕様書とFounding Engineerの実装計画に基づき、システム構成、API設計、BYOK実装方針、セキュリティ要件を明確にする。
-
-## 2. システム構成
-
-ツミキリは、フロントエンドにReact、バックエンドにCloudflare Workers、データベースにSupabase、AIプロバイダーとしてOpenAI/Anthropic/Google APIを使用する。
+## 1. システム構成図
 
 ```mermaid
 graph TD
-    A[ユーザー] -- HTTPS --> B(React Frontend - Cloudflare Pages)
-    B -- API Request --> C(Cloudflare Workers - Hono API)
-    C -- DB Operations --> D(Supabase - PostgreSQL, Auth, Storage)
-    C -- AI Request --> E(AI Provider API - OpenAI/Anthropic/Google)
+    A[ユーザー] -- HTTPS --> B(React Frontend)
+    B -- 静的ホスト --> C(Cloudflare Pages)
+    C -- APIリクエスト (HTTPS) --> D(Cloudflare Workers - Hono API)
+    D -- DBアクセス (PostgreSQL) --> E(Supabase - PostgreSQL)
+    D -- 認証/認可 --> F(Supabase - Auth)
+    D -- ファイルストレージ --> G(Supabase - Storage)
+    D -- AIリクエスト (BYOKまたはマネージド) --> H(AI Provider API - OpenAI/Anthropic/Google)
+
+    subgraph Frontend
+        B
+        C
+    end
+
+    subgraph Backend
+        D
+    end
+
+    subgraph Data & AI
+        E
+        F
+        G
+        H
+    end
 ```
 
-### 2.1. チャットアシスタント機能のシステム構成
+## 2. API設計（エンドポイント一覧）
 
-```mermaid
-graph TD
-    A[React Frontend] -- POST /api/chat (チャット送信) --> B(Cloudflare Workers)
-    B -- 会話履歴 保存/取得 --> C(Supabase: chat_messages)
-    B -- AIリクエスト --> D(AI Provider API)
-    D -- AI応答 --> B
-    B -- AI応答 --> A
+ツミキリプロダクトの主要なAPIエンドポイントは以下の通り。
+
+| エンドポイント | Method | 機能 | 備考 |
+|---------------|--------|------|------|
+| `/api/chat` | POST | チャット送信・AI応答取得 | 会話履歴をSupabaseに保存 |
+| `/api/chat/history` | GET | 会話履歴取得 | ユーザーIDでフィルタリング |
+| `/api/chat/history/:sessionId` | GET | 特定セッションの履歴取得 | 特定の会話セッションIDでフィルタリング |
+| `/api/report/generate` | POST | レポート生成 | ファイルアップロードとAI分析指示を受け付け、レポートを生成 |
+
+## 3. BYOK (Bring Your Own Key) 実装方針
+
+ユーザーが自身のAIプロバイダーAPIキーを利用できるBYOK方式をサポートする。
+
+-   **キーの管理**: ユーザーのAPIキーはCloudflare Workersのシークレット管理機能を利用して安全に保存・管理する。
+-   **一時利用**: ユーザーのAPIキーはサーバーサイドでAIプロバイダーへのリクエスト時に一時的に利用し、ログには記録せず、リクエスト完了後メモリから破棄する。
+-   **暗号化**: 保存されるAPIキーは暗号化して管理し、ユーザーごとに完全に分離する。
+
+## 4. セキュリティ要件
+
+-   **通信の暗号化**: 全ての通信はTLS 1.3により暗号化され、傍受や改ざんから保護される。Cloudflareの標準機能を利用。
+-   **保存データの保護**: SupabaseのPostgreSQLに保存されるデータはAES-256により暗号化される。
+-   **認証・認可**:
+    -   ユーザー認証はSupabase Authを利用し、メールアドレス/パスワード認証およびソーシャルログインをサポートする。
+    -   認可にはSupabaseのRow Level Security (RLS) を活用し、ユーザーが自身のデータのみにアクセスできることを保証する。
+    -   APIキーはユーザーごとに分離し、厳格なアクセス制御を適用する。
+-   **脆弱性対策**:
+    -   OWASP Top 10を考慮したWebアプリケーションの設計・実装を行う。
+    -   定期的なセキュリティレビューと脆弱性スキャンを実施する。
+
+## 5. データベーススキーマ（主要テーブル）
+
+Founding Engineerの実装計画に基づき、主要なデータベーススキーマ案を提示する。
+
+### `chat_messages` テーブル
+
+会話履歴を保存する。
+
+```sql
+CREATE TABLE chat_messages (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+    role VARCHAR(10) NOT NULL CHECK (role IN ('user', 'assistant', 'system')),
+    content TEXT NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- RLS有効化とポリシー設定
+ALTER TABLE chat_messages ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Users can view own messages"
+    ON chat_messages FOR SELECT
+    USING (auth.uid() = user_id);
+CREATE POLICY "Users can insert own messages"
+    ON chat_messages FOR INSERT
+    WITH CHECK (auth.uid() = user_id);
 ```
 
-### 2.2. AIレポート生成機能のシステム構成
+### `reports` テーブル
 
-Founding Engineerの進捗に基づき、ファイルアップロードからレポート生成までの詳細フローを以下に示す。
+AIレポート生成機能で生成されたレポートの履歴を保存する。
 
-```mermaid
-graph TD
-    A[React Frontend] -- POST /api/report/upload (ファイルアップロード) --> B(Cloudflare Workers)
-    B -- ファイルをSupabase Storageに一時保存 --> C(Supabase Storage)
-    A -- POST /api/report/generate (レポート生成指示 + プロンプト) --> B
-    B -- Supabase Storageからファイル読み込み --> C
-    B -- ファイル内容解析 (CSV/Excel) --> F(Cloudflare Workers内部処理)
-    F -- データ分析プロンプト生成 --> G(AI Provider API)
-    G -- AIによるデータ分析・レポート生成 --> F
-    F -- レポート結果をSupabaseに保存 --> E(Supabase: reports)
-    F -- レポート結果をユーザーに返却 --> A
+```sql
+CREATE TABLE reports (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+    title VARCHAR(255) NOT NULL,
+    file_name VARCHAR(255),
+    file_url TEXT,
+    prompt TEXT NOT NULL,
+    result TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- RLS有効化とポリシー設定
+ALTER TABLE reports ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Users can view own reports"
+    ON reports FOR SELECT
+    USING (auth.uid() = user_id);
+CREATE POLICY "Users can insert own reports"
+    ON reports FOR INSERT
+    WITH CHECK (auth.uid() = user_id);
 ```
-
-## 3. API設計
-
-Founding Engineerの実装計画に基づき、主要なAPIエンドポイントを定義する。
-
-### 3.1. 認証・認可関連API
-
-| エンドポイント | Method | 機能 | 認証要件 |
-|---------------|--------|------|----------|
-| `/api/auth/login` | POST | ユーザーログイン | なし |
-| `/api/auth/register` | POST | ユーザー登録 | なし |
-| `/api/auth/logout` | POST | ユーザーログアウト | ログイン必須 |
-| `/api/auth/refresh-token` | POST | トークン更新 | ログイン必須 |
-
-### 3.2. チャットアシスタント関連API
-
-| エンドポイント | Method | 機能 | 認証要件 |
-|---------------|--------|------|----------|
-| `/api/chat` | POST | チャット送信・AI応答取得 | ログイン必須 |
-| `/api/chat/history` | GET | 会話履歴取得 | ログイン必須 |
-| `/api/chat/history/:sessionId` | GET | 特定セッションの履歴取得 | ログイン必須 |
-
-### 3.3. AIレポート生成関連API
-
-| エンドポイント | Method | 機能 | 認証要件 | リクエストボディ（例） | レスポンスボディ（例） |
-|---------------|--------|------|----------|------------------------|------------------------|
-| `/api/report/upload` | POST | ファイルアップロード（Supabase Storageへ一時保存）。CSV/Excel形式のファイルを想定。 | ログイン必須 | `FormData` にファイルデータ | `{"fileId": "uuid-...", "fileName": "example.csv"}` |
-| `/api/report/generate` | POST | レポート生成指示。アップロードされたファイルを解析し、AIへ分析指示を送信。AIからの結果を整形し、Supabaseに保存後、ユーザーに返却。 | ログイン必須 | `{"fileId": "uuid-...", "prompt": "先月の売上を分析して"}` | `{"reportId": "uuid-...", "title": "売上分析レポート", "summary": "...", "content": "..."}` |
-| `/api/report/history` | GET | レポート履歴取得 | ログイン必須 | なし | `[{"reportId": "uuid-...", "title": "...", "createdAt": "..."}]` |
-| `/api/report/history/:reportId` | GET | 特定レポート取得 | ログイン必須 | なし | `{"reportId": "uuid-...", "title": "...", "content": "..."}` |
-| `/api/report/download/:reportId` | GET | レポート結果ダウンロード（PDF/Markdown形式） | ログイン必須 | なし | レポートファイル（バイナリデータ） |
-
-## 4. BYOK (Bring Your Own Key) 実装方針
-
-ユーザーは自身のAIプロバイダーAPIキーを登録し、ツミキリのAI機能を利用できる。
-
-- **APIキーの登録**: ユーザーが設定画面でAPIキーを登録。Supabaseの暗号化されたカラムに保存する。
-- **キーの利用**: Cloudflare Workersがリクエスト時にSupabaseからAPIキーを取得し、AIプロバイダーへのリクエストヘッダに設定。
-- **セキュリティ**:
-    - APIキーはサーバーサイドで一時利用のみとし、ログには記録しない。
-    - リクエスト完了後、メモリから即座に破棄する。
-    - ユーザーのAPIキーは、そのユーザーのリクエストのみに利用されることを保証する。
-
-## 5. セキュリティ要件
-
-### 5.1. データ保護
-
-- **通信**: TLS 1.3（Cloudflare標準）による暗号化。
-- **保存データ**: Supabaseによるデータ暗号化（AES-256）。特に、アップロードされたファイルはSupabase Storageに保存され、ユーザーごとのアクセス制御（Row Level Security）を適用する。
-- **APIキー**: Cloudflare Workersのシークレット管理とSupabaseの暗号化カラムを併用し、厳重に保護する。
-
-### 5.2. 認証・認可
-
-- **ユーザー認証**: Supabase Auth（メールアドレス、ソーシャルログイン）を利用。
-- **データアクセス制御**: SupabaseのRow Level Security (RLS) により、ユーザーは自身のデータ（チャット履歴、レポート、アップロードファイル）のみアクセス可能とする。
-- **APIキーの分離**: BYOKで登録されたAPIキーは、各ユーザーのデータ処理のみに利用され、他のユーザーのデータにはアクセスできないようにする。
-
-### 5.3. ファイルアップロードのセキュリティ
-
-- **ファイルサイズ制限**: Cloudflare Workersでファイルサイズを制限し、サービス停止攻撃（DoS）を防止する。
-- **ファイルタイプ検証**: アップロード時に許容されるファイルタイプ（例: .csv, .xlsx）を厳密に検証し、不正なファイルのアップロードを防ぐ。
-- **ウイルススキャン**: 将来的には、アップロードされたファイルに対してウイルススキャンを導入することを検討する（Q2以降）。
-- **一時保存**: アップロードされたファイルはSupabase Storageに一時的に保存され、処理完了後は一定期間後に自動削除、またはユーザーが手動で削除できる機能を提供する。
-
-## 6. パフォーマンス要件
-
-| 指標 | 目標値 |
-|------|--------|
-| 初期ロード | 2秒以内（LCP） |
-| チャット応答 | 3秒以内（AI応答含む） |
-| レポート生成 | 10秒以内（CSV 1000行まで） |
-| 書類生成 | 5秒以内 |
-
-## 7. 将来の技術拡張（Q2以降の検討事項）
-
-- **音声入力**: Web Speech API → 自然言語指示
-- **モバイルアプリ**: PWA対応（インストール不要）
-- **Webhook連携**: 外部サービスとの自動連携
-- **マルチテナント**: 企業ごとのデータ完全分離
-
-## 8. 技術的リスクと対策
-
-| リスク | 対策 |
-|--------|------|
-| AI応答の品質ばらつき | プロンプトエンジニアリングの強化、AIモデルの複数利用、ユーザーによるフィードバック機能 |
-| AIプロバイダーのサービス停止 | 複数のAIプロバイダーをバックアップとして確保、自動切り替え機能の検討 |
-| データ漏洩（BYOK） | APIキーの厳重な管理、RLSの徹底、定期的なセキュリティ監査 |
-| ファイルアップロードの脆弱性 | ファイルタイプ/サイズ制限、ウイルススキャン導入（将来）、WAFによる保護 |
-| Cloudflare Workersの制限 | Edge Functionsの最適化、大規模データ処理はバッチ処理にオフロード検討 |
