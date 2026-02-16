@@ -11,9 +11,20 @@ type Bindings = {
 
 const app = new Hono();
 
+// グローバルエラーハンドリングミドルウェア
+app.onError((err, c) => {
+  console.error(`${err}`);
+  return c.json({ error: 'Internal Server Error' }, 500);
+});
+
 // POST /api/chat エンドポイント
 app.post('/api/chat', async (c) => {
   const { SUPABASE_URL, SUPABASE_ANON_KEY } = env<Bindings>(c);
+  
+  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+    return c.json({ error: 'Supabase environment variables are not set' }, 500);
+  }
+
   const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
   const { userId, message } = await c.req.json();
@@ -35,6 +46,9 @@ app.post('/api/chat', async (c) => {
 
   // AI応答をモック（実際にはAIプロバイダーにリクエスト）
   // TODO: AIプロバイダーとの実際の連携を実装する
+  // 例:
+  // const aiProvider = new OpenAI(AI_PROVIDER_API_KEY);
+  // const aiResponse = await aiProvider.chat.completions.create({...});
   const aiResponseContent = `AIアシスタントからの応答: "${message}" についてですね。現在、この機能は開発中です。`;
 
   // AI応答を保存
@@ -48,18 +62,26 @@ app.post('/api/chat', async (c) => {
     return c.json({ error: 'Failed to save AI message' }, 500);
   }
 
-  return c.json({ response: aiResponseContent });
+  return c.json({
+    userMessage: userMessage[0],
+    aiMessage: aiMessage[0],
+  });
 });
 
-// GET /api/chat/history エンドポイント
+// GET /api/chat/history エンドポイント (追加)
 app.get('/api/chat/history', async (c) => {
   const { SUPABASE_URL, SUPABASE_ANON_KEY } = env<Bindings>(c);
+
+  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+    return c.json({ error: 'Supabase environment variables are not set' }, 500);
+  }
+
   const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-  const userId = c.req.query('userId'); // クエリパラメータからuserIdを取得
+  const { userId } = c.req.query();
 
   if (!userId) {
-    return c.json({ error: 'userId is required as a query parameter' }, 400);
+    return c.json({ error: 'userId is required' }, 400);
   }
 
   const { data: messages, error } = await supabase
