@@ -62,49 +62,106 @@ graph LR
     - 自然言語で分析指示
     - AIがデータを分析し、日本語レポート生成
     - PDF/Markdownダウンロード
-- **システム構成**:
+- **技術スタック**:
+    - **フロントエンド**: React + TypeScript
+    - **バックエンド**: Cloudflare Workers (Hono)
+    - **データベース**: Supabase Storage (ファイル一時保存), Supabase (レポート履歴 `reports` テーブル)
+    - **ファイル解析**: `papaparse` (CSV), `xlsx` (Excel)
+        - **`xlsx`ライブラリのCloudflare Workersにおける互換性と導入方針**:
+            - `xlsx`ライブラリはNode.js/ブラウザ環境を想定しているため、Cloudflare WorkersのEdge RuntimeではNode.jsの組み込みモジュールが利用できない場合がある。
+            - **対応策**:
+                1. `wrangler`によるバンドルと`node_compat = true`設定で、Node.js依存の一部を解決し利用を試みる。これが現実的な第一アプローチ。
+                2. `node_compat`で問題が発生した場合、CDNで提供されるブラウザ向けビルドを`importScripts`で利用するか、WASM版の導入を検討する。
+    - **AIプロバイダー**: OpenAI GPT-4o (データ分析 + レポート生成)
+
+- **APIエンドポイント設計**:
+    - `/api/report/upload` (POST): ファイルアップロード
+    - `/api/report/generate` (POST): レポート生成
+    - `/api/report/history` (GET): レポート履歴取得
+    - `/api/report/download/:reportId` (GET): レポートダウンロード
+
+- **データベーススキーマ（Supabase PostgreSQL）**:
+    ```sql
+    CREATE TABLE reports (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+        title VARCHAR(255) NOT NULL,
+        file_name VARCHAR(255),
+        file_url TEXT,
+        prompt TEXT NOT NULL,
+        result TEXT,
+        format VARCHAR(50), -- pdf, markdown
+        created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    ALTER TABLE reports ENABLE ROW LEVEL SECURITY;
+
+    CREATE POLICY "Users can view own reports"
+        ON reports FOR SELECT
+        USING (auth.uid() = user_id);
+
+    CREATE POLICY "Users can insert own reports"
+        ON reports FOR INSERT
+        WITH CHECK (auth.uid() = user_id);
     ```
-    React Frontend
-        │
-        ▼ POST /api/report/upload (File Upload)
-    Cloudflare Workers (Hono)
-        │
-        ├── Supabase Storage: ファイル一時保存
-        │
-        ├── File Parse (xlsx/papaparse)
-        │
-        ▼ AI Provider API
-    OpenAI GPT-4o (データ分析 + レポート生成)
-    ```
-- **ファイル解析機能強化（xlsxライブラリの導入方針）**:
-    - **互換性**: `xlsx`ライブラリはNode.js/ブラウザ環境を想定しているため、Cloudflare WorkersのEdge Runtimeでは直接的な利用に課題がある。
-    - **導入アプローチ**:
-        1.  **`wrangler`によるバンドルと`node_compat = true`**:
-            - `package.json`に`xlsx`ライブラリを依存関係として追加。
-            - `wrangler.toml`ファイルに`node_compat = true`設定を追加し、Node.js互換モードを有効化。
-            - Cloudflare Workers内で`import * as XLSX from 'xlsx';`としてライブラリをインポートし、`XLSX.read()`関数を使用してExcelファイルデータをワークブックオブジェクトに変換する。
-            - 変換されたワークブックからシートデータを抽出し、JSON形式などの扱いやすいデータ構造に変換する。
-        2.  **代替案**: `node_compat`で問題が発生した場合は、CDN版/WASM版の利用を検討する。
-    - **動作検証**:
-        - シンプルなデータを含むExcelファイルを複数パターンで用意。
-        - `wrangler dev`でのローカル開発サーバーで、`xlsx`ライブラリによる解析が正しく行われることを確認。
-        - デプロイ後の環境でも同様のテストを実施し、本番に近い環境での動作を確認する。
+
+- **動作検証計画（xlsxライブラリ）**:
+    1. **テスト用Excelファイルの準備**: シンプルなデータを含むExcelファイル（.xlsx形式）を複数パターン（単一シート、複数シート、異なるデータ型など）で用意する。
+    2. **ローカル環境での動作検証**: `wrangler dev`コマンドを使用してCloudflare Workersのローカル開発サーバーを起動し、用意したテスト用Excelファイルをアップロードし、`xlsx`ライブラリによる解析が正しく行われることを確認する。
+    3. **デプロイ後の動作検証**: テストブランチにコミットし、Cloudflare Pages/Workersにデプロイ後、同様のテストを実施し、本番に近い環境での動作を確認する。
 
 ### 5-3. テンプレート書類生成
 
 - **機能要件**:
-    - テンプレート管理（見積書、請求書など）
-    - 自然言語で指示 → テンプレートから自動生成
-    - PDF/Wordダウンロード
-- **システム構成**:
-    ```
-    React Frontend
-        │
-        ▼ POST /api/document/generate
-    Cloudflare Workers
-        │
-        ├── Supabase: テンプレート保存/取得
-        │
-        ▼ AI Provider API
-    OpenAI GPT-4o (書類内容生成)
+    - 事前に登録したテンプレートから見積書・請求書などを自動生成
+    - 顧客情報・商品情報を入力 → AIが埋め込み
+    - PDFダウンロード・メール送信
+
+- **技術スタック**:
+    - **フロントエンド**: React + TypeScript
+    - **バックエンド**: Cloudflare Workers (Hono)
+    - **データベース**: Supabase (テンプレート `templates` テーブル, 顧客情報 `customers` テーブル)
+    - **AIプロバイダー**: OpenAI GPT-4o (書類内容生成)
+    - **PDF生成**: Puppeteer (Cloudflare Workersとの互換性を確認)
+
+- **APIエンドポイント設計**:
+    - `/api/template/list` (GET): テンプレート一覧取得
+    - `/api/template/generate` (POST): 書類生成
+    - `/api/template/:templateId` (GET): 特定テンプレート取得
+    - `/api/customer/list` (GET): 顧客情報一覧取得
+    - `/api/customer/add` (POST): 顧客情報追加
+
+- **データベーススキーマ（Supabase PostgreSQL）**:
+    ```sql
+    CREATE TABLE templates (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+        name VARCHAR(255) NOT NULL,
+        type VARCHAR(50) NOT NULL, -- estimate, invoice, report
+        content TEXT NOT NULL, -- Markdown or HTML template
+        created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    CREATE TABLE customers (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+        name VARCHAR(255) NOT NULL,
+        email VARCHAR(255),
+        address TEXT,
+        phone VARCHAR(50),
+        created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    ALTER TABLE templates ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE customers ENABLE ROW LEVEL SECURITY;
+
+    CREATE POLICY "Users can view own templates" ON templates FOR SELECT USING (auth.uid() = user_id);
+    CREATE POLICY "Users can insert own templates" ON templates FOR INSERT WITH CHECK (auth.uid() = user_id);
+    CREATE POLICY "Users can update own templates" ON templates FOR UPDATE USING (auth.uid() = user_id);
+    CREATE POLICY "Users can delete own templates" ON templates FOR DELETE USING (auth.uid() = user_id);
+
+    CREATE POLICY "Users can view own customers" ON customers FOR SELECT USING (auth.uid() = user_id);
+    CREATE POLICY "Users can insert own customers" ON customers FOR INSERT WITH CHECK (auth.uid() = user_id);
+    CREATE POLICY "Users can update own customers" ON customers FOR UPDATE USING (auth.uid() = user_id);
+    CREATE POLICY "Users can delete own customers" ON customers FOR DELETE USING (auth.uid() = user_id);
     ```
