@@ -1,105 +1,67 @@
-# ツミキリ 技術アーキテクチャ設計書
+# ツミキリ 技術アーキテクチャ設計
 
 > 作成: CTO マルコ・ロッシ
 > 日付: 2026-02-16
-> ステータス: 設計中
+> ステータス: ドラフト
 
 ## 1. システム構成図
 
+ツミキリのシステム構成は、既存の技術方針書 `docs/tech-direction.md` に基づき、以下の通りとする。
+特に、チャットアシスタント機能とAIレポート生成機能の追加を反映する。
+
 ```mermaid
-graph LR
-    A[React Frontend (Cloudflare Pages)] -- API Request --> B(Cloudflare Workers - Hono API)
-    B -- Store/Retrieve Data --> C(Supabase - PostgreSQL/Auth/Storage)
-    B -- AI Request (BYOK/Managed) --> D(AI Provider API - OpenAI/Anthropic/Google)
-    B -- File Upload --> C
-    B -- CSV/Excel Parse --> B
+graph TD
+    A[ユーザー (ブラウザ)] -- HTTPS --> B(Cloudflare Pages / React Frontend)
+    B -- API リクエスト --> C(Cloudflare Workers / Hono API)
+    C -- 認証 / データ保存 --> D(Supabase PostgreSQL)
+    C -- ファイル一時保存 --> E(Supabase Storage)
+    C -- AIリクエスト (BYOKまたはマネージド) --> F(AI Provider API <br> OpenAI/Anthropic/Google)
+
+    subgraph 主要機能フロー
+        B -- POST /api/chat --> C
+        B -- GET /api/chat/history --> C
+        B -- POST /api/report/generate (ファイル含む) --> C
+        C -- 会話履歴保存/取得 --> D
+        C -- レポート履歴保存/取得 --> D
+        C -- アップロードファイル保存 --> E
+        C -- AI処理 (チャット応答/レポート生成) --> F
+    end
 ```
 
-## 2. API設計
+## 2. API設計（エンドポイント一覧）
 
-### 2-1. チャットアシスタントAPI
+Founding EngineerのMVP実装計画 `docs/implementation-plan.md` に基づき、以下のAPIエンドポイントを定義する。
 
-| エンドポイント | Method | 機能 |
-|---------------|--------|------|
-| `/api/chat` | POST | チャット送信・AI応答取得 |
-| `/api/chat/history` | GET | 会話履歴取得 |
-| `/api/chat/history/:sessionId` | GET | 特定セッションの履歴取得 |
-
-### 2-2. AIレポート生成API
-
-| エンドポイント | Method | 機能 |
-|---------------|--------|------|
-| `/api/report/upload` | POST | ファイルアップロード |
-| `/api/report/generate` | POST | レポート生成 |
-| `/api/report/history` | GET | レポート履歴取得 |
+| エンドポイント | Method | 機能 | 備考 |
+|---------------|--------|------|------|
+| `/api/auth/signup` | POST | ユーザー登録 | Supabase Authを利用 |
+| `/api/auth/signin` | POST | ユーザーログイン | Supabase Authを利用 |
+| `/api/chat` | POST | チャット送信・AI応答取得 | 会話履歴をSupabaseに保存 |
+| `/api/chat/history` | GET | 全会話履歴取得 | ユーザーIDでフィルタリング |
+| `/api/chat/history/:sessionId` | GET | 特定セッションの履歴取得 | - |
+| `/api/report/upload` | POST | レポート用ファイルアップロード | Supabase Storageに一時保存 |
+| `/api/report/generate` | POST | ファイル解析・AIレポート生成 | AI Provider APIと連携 |
+| `/api/report/list` | GET | 生成済みレポート一覧取得 | - |
+| `/api/report/:reportId` | GET | 特定レポート詳細取得 | - |
+| `/api/report/:reportId/download` | GET | レポートダウンロード | PDF/Markdown形式 |
+| `/api/template/list` | GET | テンプレート一覧取得 | - |
+| `/api/template/:templateId/generate` | POST | テンプレートから書類生成 | - |
 
 ## 3. BYOK実装方針
 
-- ユーザーのAPIキーはCloudflare Workersのシークレット管理を活用し、サーバーサイドで一時利用のみとする。
-- ログには記録せず、リクエスト完了後メモリから破棄する。
-- SupabaseのRow Level Security (RLS) を利用し、ユーザーごとにAPIキーを安全に管理する。
+「ツミキリ」では、ユーザーが自身のAIプロバイダーAPIキーを利用できるBYOK (Bring Your Own Key) 方式をサポートする。
+
+- **キーの保存**: ユーザーから提供されたAPIキーは、Supabaseのデータベースに暗号化して保存する。各ユーザーのキーは、そのユーザーのみがアクセスできるようRow Level Security (RLS) で保護する。
+- **キーの利用**: Cloudflare Workers上でAIプロバイダーへのリクエスト時にのみ、一時的にキーを復号して利用する。リクエスト完了後、メモリから即座に破棄し、ログには記録しない。
+- **セキュリティ**: Cloudflare Workersのシークレット管理機能とSupabaseのセキュリティ機能を組み合わせ、キーの漏洩リスクを最小限に抑える。
 
 ## 4. セキュリティ要件
 
-- 通信はTLS 1.3（Cloudflare標準）を適用。
-- 保存データはSupabaseの暗号化（AES-256）を利用。
-- APIキーはCloudflare Workersのシークレット管理で保護。
-- RLSによりユーザーは自身のデータのみアクセス可能。
+`docs/tech-direction.md` に記載の全体セキュリティ方針に加え、ツミキリ固有の要件を以下に定める。
 
-## 5. 技術実装詳細
-
-### 5-1. チャットアシスタント
-
-- **フロントエンド**: React + TypeScript + Zustand
-- **バックエンド**: Cloudflare Workers (Hono)
-- **データベース**: Supabase (会話履歴 `chat_messages` テーブル)
-- **AIプロバイダー**: OpenAI GPT-4o / Anthropic Claude / Google Gemini (BYOK/Managed)
-
-### 5-2. AIレポート生成
-
-- **機能要件**:
-    - CSV/Excelファイルをアップロード
-    - 自然言語で分析指示
-    - AIがデータを分析し、日本語レポート生成
-    - PDF/Markdownダウンロード
-
-- **システム構成**:
-    - **フロントエンド**: React + TypeScript
-    - **バックエンド**: Cloudflare Workers (Hono)
-        - **ファイル解析**: `papaparse` (CSV), `xlsx` (Excel) を利用。`xlsx`ライブラリはCloudflare Workers環境での互換性を考慮し、`wrangler`によるバンドルと`node_compat = true`の設定で導入を試みる。問題が発生した場合はCDN版/WASM版の利用を検討する。
-        - **ファイル一時保存**: Supabase Storage
-    - **AIプロバイダー**: OpenAI GPT-4o (データ分析 + レポート生成)
-
-- **データベーススキーマ**:
-    - `reports` テーブル: レポート履歴を管理。
-
-- **APIエンドポイント**:
-    - `/api/report/upload`: ファイルアップロード。
-    - `/api/report/generate`: レポート生成。
-    - `/api/report/history`: レポート履歴取得。
-
-## 6. パフォーマンス要件
-
-| 指標 | 目標値 |
-|------|--------|
-| 初期ロード | 2秒以内（LCP） |
-| チャット応答 | 3秒以内（AI応答含む） |
-| レポート生成 | 10秒以内（CSV 1000行まで） |
-| 書類生成 | 5秒以内 |
-
-## 7. 将来の技術拡張（Q2以降の検討事項）
-
-- 音声入力: Web Speech API → 自然言語指示
-- モバイルアプリ: PWA対応（インストール不要）
-- Webhook連携: 外部サービスとの自動連携
-- マルチテナント: 企業ごとのデータ完全分離
-
-## 8. 技術的リスクと対策
-
-| リスク | 対策 |
-|--------|------|
-| AI応答の品質ばらつき | プロンプトエンジニアリングの継続的な改善、ユーザーからのフィードバックループ構築 |
-| Cloudflare Workersのコールドスタート | アイドル状態のWorkerを維持する設定（有料プラン）を検討。または、初回リクエスト時に高速に応答できるようAPIの最適化 |
-| SupabaseのRLS設定ミス | 厳格なコードレビューとテストによる検証 |
-| BYOKのAPIキー漏洩 | Cloudflare Workersのシークレット管理を徹底し、最小権限の原則を適用 |
-| 大規模データ処理時のパフォーマンス | Cloudflare Workersの制限を考慮し、大規模データはバッチ処理やストリーミング処理を検討 |
+- **ユーザーデータ分離**: SupabaseのRow Level Security (RLS) を徹底し、各ユーザーが自身のデータ（会話履歴、レポート、アップロードファイル、APIキー）のみにアクセスできることを保証する。
+- **APIキーの厳重管理**: BYOK方式で提供されるユーザーのAIプロバイダーAPIキーは、データベースで暗号化して保存し、利用時のみ一時的に復号する。ログへの記録は厳禁とする。
+- **入力・出力検証**: AIへのプロンプト入力およびAIからの応答出力に対し、不適切なコンテンツ（個人情報、機密情報など）や悪意のあるインジェクションを防ぐためのサニタイズ・検証処理を実装する。
+- **レートリミット**: APIエンドポイントごとに適切なレートリミットを設定し、DoS攻撃や不正利用を防止する。
+- **ファイルアップロード**: Supabase Storageへのファイルアップロード時に、ファイルタイプ検証、サイズ制限、ウイルススキャン（将来的に検討）を実施する。
+- **認証**: Supabase Authを利用し、セキュアなユーザー認証フローを確立する。セッション管理もSupabaseの機能に委ねる。
