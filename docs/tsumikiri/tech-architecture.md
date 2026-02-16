@@ -69,55 +69,85 @@ graph TD
 - **GitHub Actions** — PR時にLint + Type Check + テスト
 - **Cloudflare Wrangler** — `main` ブランチマージ時に自動デプロイ
 
-## 3. API設計（エンドポイント一覧）
+## 3. API設計（ツミキリ）
 
-Founding EngineerのMVP実装計画 `docs/implementation-plan.md` および最新の進捗 `docs/implementation-progress.md` に基づき、以下のAPIエンドポイントを定義する。
+Founding EngineerによるMVP実装計画に基づき、以下のAPIエンドポイントを設計する。
 
-| エンドポイント | Method | 機能 | 備考 |\
-|---------------|--------|------|------|\
-| `/api/auth/signup` | POST | ユーザー登録 | Supabase Authを利用、実装完了 |\
-| `/api/auth/signin` | POST | ユーザーログイン | Supabase Authを利用、実装完了 |\
-| `/api/chat` | POST | チャット送信・AI応答取得 | 会話履歴をSupabaseに保存、骨子実装完了 |\
-| `/api/chat/history` | GET | 全会話履歴取得 | ユーザーIDでフィルタリング、実装中 |\
-| `/api/chat/history/:sessionId` | GET | 特定セッションの履歴取得 | - |\
-| `/api/report/upload` | POST | レポート用ファイルアップロード | Supabase Storageに一時保存、実装完了 |\
-| `/api/report/generate` | POST | ファイル解析・AIレポート生成 | AI Provider APIと連携、実装中 |\
-| `/api/report/status/:reportId` | GET | レポート生成ステータス取得 | - |\
-| `/api/report/download/:reportId` | GET | 生成済みレポートダウンロード | - |\
-| `/api/template/list` | GET | テンプレート一覧取得 | - |\
-| `/api/template/generate` | POST | テンプレートから書類生成 | - |\
+#### チャットアシスタントAPI
 
-## 4. BYOK実装方針
+| エンドポイント | Method | 機能 | リクエスト例 (JSON) | レスポンス例 (JSON) |
+|---------------|--------|------|---------------------|---------------------|
+| `/api/chat` | `POST` | ユーザーメッセージの送信とAI応答の取得 | `{'message': '今日の売上を教えて', 'conversationId': 'optional_uuid'}` | `{'response': '先月の売上は〇〇円です。', 'conversationId': 'uuid_of_current_conversation'}` |
+| `/api/chat/history` | `GET` | ユーザーの会話履歴を全て取得 | なし | `[{'id': 'uuid', 'role': 'user', 'content': '...', 'created_at': '...'}, {'id': 'uuid', 'role': 'assistant', 'content': '...', 'created_at': '...'}]` |
+| `/api/chat/history/:conversationId` | `GET` | 特定セッションの会話履歴を取得 | なし | `[{'id': 'uuid', 'role': 'user', 'content': '...', 'created_at': '...'}, {'id': 'uuid', 'role': 'assistant', 'content': '...', 'created_at': '...'}]` |
 
-- ユーザーのAPIキーは、Supabaseの暗号化されたデータベースに保存し、各ユーザーに紐付ける。
-- Cloudflare WorkersでAI Provider APIを呼び出す際に、ユーザーのAPIキーを一時的に取得し、リクエストヘッダーに含めて送信する。
-- APIキーはサーバーサイドで一時利用のみとし、ログには記録せず、リクエスト完了後メモリから破棄する。
-- ユーザーごとのAPIキー利用状況を監視し、不正利用を防止する仕組みを検討する。
+**リクエスト/レスポンススキーマ詳細**
 
-## 5. セキュリティ要件
+**1. `POST /api/chat`**
+- **リクエストボディ**:
+  ```json
+  {
+    "message": "string",  // ユーザーからのメッセージ (必須)
+    "conversationId": "string | null" // 会話ID (オプション、既存の会話を継続する場合)
+  }
+  ```
+- **レスポンスボディ**:
+  ```json
+  {
+    "response": "string", // AIからの応答メッセージ
+    "conversationId": "string", // 現在の会話ID (新規の場合は生成、既存の場合はそのID)
+    "timestamp": "string" // ISO 8601形式のタイムスタンプ
+  }
+  ```
+  - **エラーレスポンス**:
+    ```json
+    {
+      "error": "string", // エラーメッセージ
+      "code": "string" // エラーコード (例: "INVALID_INPUT", "INTERNAL_SERVER_ERROR")
+    }
+    ```
+
+**2. `GET /api/chat/history`**
+- **レスポンスボディ**:
+  ```json
+  [
+    {
+      "id": "string", // メッセージID
+      "conversationId": "string", // 会話ID
+      "role": "user | assistant", // メッセージの送信者
+      "content": "string", // メッセージ内容
+      "created_at": "string" // ISO 8601形式の作成日時
+    }
+    // ... 複数のメッセージオブジェクト
+  ]
+  ```
+  - **エラーレスポンス**: (上記 `POST /api/chat` と同様の形式)
+
+**3. `GET /api/chat/history/:conversationId`**
+- **パスパラメータ**: `conversationId` (string) - 取得したい会話のID
+- **レスポンスボディ**: (上記 `GET /api/chat/history` と同様の形式、ただし指定された `conversationId` のメッセージのみ)
+  - **エラーレスポンス**: (上記 `POST /api/chat` と同様の形式)
+
+## 4. セキュリティ方針
 
 ### データ保護
 - 通信: TLS 1.3（Cloudflare標準）
 - 保存データ: Supabase暗号化（AES-256）
-- APIキー: Cloudflare Workers のシークレット管理、Supabaseでの暗号化保存
+- APIキー: Cloudflare Workers のシークレット管理
 
 ### 認証・認可
-- **Supabase Auth**（メール + ソーシャルログイン）を全面的に利用。ユーザー認証機能は実装完了。
-- **Row Level Security（RLS）**: SupabaseのRLSを積極的に活用し、ユーザーは自分のデータ（例: `chat_messages`, `reports`）のみアクセス可能とする。具体的には、`auth.uid() = user_id` のポリシーを適用済み。
+- Supabase Auth（メール + ソーシャルログイン）をFounding Engineerが実装済み。
+- Row Level Security（RLS）: Founding Engineerが `chat_messages` テーブルに以下のポリシーを適用済み。
+  - `CREATE POLICY "Users can view own messages" ON chat_messages FOR SELECT USING (auth.uid() = user_id);`
+  - `CREATE POLICY "Users can insert own messages" ON chat_messages FOR INSERT WITH CHECK (auth.uid() = user_id);`
+  これにより、ユーザーは自分のデータのみアクセス可能であることを保証する。
 - APIキーは暗号化して保存（ユーザーごとに分離）
 
 ### BYOK セキュリティ
-- ユーザーのAPIキーはサーバーサイドで一時利用のみ
-- ログに記録しない
-- リクエスト完了後メモリから破棄
-- APIキーの利用上限設定や異常検知メカニズムを導入し、セキュリティを強化する。
+- ユーザーのAPIキーはCloudflare Workersのシークレットとして安全に管理し、サーバーサイドで一時利用のみ行う。
+- ログには記録せず、リクエスト完了後メモリから破棄することで、キーの漏洩リスクを最小限に抑える。
 
-### その他のセキュリティ対策
-- 入力値検証: 全てのAPIエンドポイントで入力値のサニタイズと検証を実施。
-- レートリミット: APIへの過剰なリクエストを防ぐため、Cloudflare Workersでレートリミットを導入。
-- 脆弱性診断: 定期的な脆弱性診断（SAST/DAST）の実施を検討。
-
-## 6. 開発規約
+## 5. 開発規約
 
 ### コード品質
 - TypeScript strict mode 必須
@@ -137,9 +167,8 @@ Founding EngineerのMVP実装計画 `docs/implementation-plan.md` および最�
 
 ### コミットメッセージ
 - AGENTS.md準拠: `[ロール名] 内容`
-- 例: `[Engineer] CSVアップロード機能を実装`
 
-## 7. パフォーマンス要件
+## 6. パフォーマンス要件
 
 | 指標 | 目標値 |
 |------|--------|
@@ -148,19 +177,16 @@ Founding EngineerのMVP実装計画 `docs/implementation-plan.md` および最�
 | レポート生成 | 10秒以内（CSV 1000行まで） |
 | 書類生成 | 5秒以内 |
 
+## 7. 技術的課題と対策
+
+| リスク | 対策 |
+|--------|------|
+| AI応答の品質ばらつき | プロンプトエンジニアリングの強化、複数AIプロバイダーの比較検討、ユーザーからのフィードバックループ構築。 |
+| **Cloudflare WorkersでのExcelファイル解析** | Founding Engineerが `xlsx` ライブラリの利用を検討中。Cloudflare WorkersのEdge RuntimeではNode.jsの組み込みモジュールが利用できない互換性の課題があるため、以下の対策を講じる。<br>1. `wrangler`によるバンドルと`node_compat = true`の設定を第一アプローチとして試行する。<br>2. 問題が発生した場合、CDNで提供されるブラウザ向けビルドを`importScripts`で利用するか、WASM版の導入を検討する。 |
+
 ## 8. 将来の技術拡張（Q2以降の検討事項）
 
 - **音声入力**: Web Speech API → 自然言語指示
 - **モバイルアプリ**: PWA対応（インストール不要）
 - **Webhook連携**: 外部サービスとの自動連携
 - **マルチテナント**: 企業ごとのデータ完全分離
-
-## 9. 技術的リスクと対策
-
-| リスク | 対策 |
-|--------|------|
-| AI応答の品質ばらつき | プロンプトエンジニアリングの強化、複数AIモデルの比較検討、ユーザーフィードバックによる継続的改善 |
-| Cloudflare Workersの制限 | Edge Runtimeの特性を理解し、Node.js互換性の問題は`node_compat`やWASMの利用で対応。バンドルサイズ最適化。 |
-| Supabaseの利用制限 | プランに応じたリソース監視、必要に応じたスケールアップ。RLSの適切な設計によるパフォーマンス維持。 |
-| セキュリティ脆弱性 | 定期的なコードレビュー、脆弱性スキャン、最新のセキュリティベストプラクティスへの追従。 |
-| BYOKの不正利用 | APIキーの利用状況監視、レートリミット、異常検知。ユーザーへの注意喚起。 |
