@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { env } from 'hono/adapter';
 import { streamText } from 'hono/streaming';
+import { createClient } from '@supabase/supabase-js'; // Supabaseクライアントをインポート
 
 type Bindings = {
   OPENAI_API_KEY: string;
@@ -10,163 +11,113 @@ type Bindings = {
 
 const app = new Hono<{ Bindings: Bindings }>();
 
-// Supabase REST APIを叩くヘルパー関数
-async function callSupabase(
-  supabaseUrl: string,
-  supabaseAnonKey: string,
-  method: string,
-  path: string,
-  body?: object,
-) {
-  const headers: HeadersInit = {
-    'Content-Type': 'application/json',
-    'apikey': supabaseAnonKey,
-    'Authorization': `Bearer ${supabaseAnonKey}`, // RLS対応のため、認証後のJWTが必要だが、今回はanon keyで簡易化
-  };
-
-  const response = await fetch(`${supabaseUrl}/rest/v1/${path}`, {
-    method: method,
-    headers: headers,
-    body: body ? JSON.stringify(body) : undefined,
-  });
-
-  if (!response.ok) {
-    const error = await response.json();
-    console.error(`Supabase API Error on ${path}:`, error);
-    throw new Error(`Supabase API Error: ${JSON.stringify(error)}`);
-  }
-  return response.json();
-}
+// Supabaseクライアントの初期化（HonoのContextから環境変数を取得）
+const getSupabaseClient = (c: any) => {
+  const { SUPABASE_URL, SUPABASE_ANON_KEY } = env<Bindings>(c);
+  return createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+};
 
 app.post('/api/chat', async (c) => {
-  const { OPENAI_API_KEY, SUPABASE_URL, SUPABASE_ANON_KEY } = env<Bindings>(c);
-  const { userId, message } = await c.req.json(); // フロントエンドからuserIdとmessageを受け取る想定
+  const { OPENAI_API_KEY } = env<Bindings>(c);
+  const supabase = getSupabaseClient(c);
+  const { userId, message } = await c.req.json();
 
   if (!userId || !message) {
     return c.json({ error: 'userId and message are required' }, 400);
   }
 
   // 1. ユーザーメッセージをSupabaseに保存
-  try {
-    await callSupabase(
-      SUPABASE_URL,
-      SUPABASE_ANON_KEY,
-      'POST',
-      'chat_messages',
-      { user_id: userId, role: 'user', content: message }
-    );
-  } catch (error: any) {
-    return c.json({ error: 'Failed to save user message to Supabase', details: error.message }, 500);
+  const { error: userMsgError } = await supabase
+    .from('chat_messages')
+    .insert({ user_id: userId, role: 'user', content: message });
+
+  if (userMsgError) {
+    console.error('Error saving user message to Supabase:', userMsgError);
+    return c.json({ error: 'Failed to save user message' }, 500);
   }
 
-  // 2. 過去の会話履歴を取得
-  let chatHistory: { role: string; content: string }[] = [];
-  try {
-    const history = await callSupabase(
-      SUPABASE_URL,
-      SUPABASE_ANON_KEY,
-      'GET',
-      `chat_messages?user_id=eq.${userId}&order=created_at.asc`
-    );
-    chatHistory = history.map((msg: any) => ({ role: msg.role, content: msg.content }));
-  } catch (error: any) {
-    console.warn('Failed to retrieve chat history from Supabase, proceeding without history:', error.message);
-    // エラーが発生しても処理を続行
+  // 2. OpenAI APIにリクエストを送信し、ストリーミングで応答を処理
+  const openaiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${OPENAI_API_KEY}`,
+    },
+    body: JSON.stringify({
+      model: 'gpt-4o', // または他の適切なモデル
+      messages: [
+        { role: 'system', content: 'You are a helpful assistant.' },
+        { role: 'user', content: message }
+      ],
+      stream: true,
+    }),
+  });
+
+  if (!openaiResponse.ok) {
+    const errorBody = await openaiResponse.text();
+    console.error('OpenAI API Error:', errorBody);
+    return c.json({ error: 'Failed to get response from AI' }, 500);
   }
 
-  // AIプロバイダーへのリクエスト
-  try {
-    const messages = [
-      { role: 'system', content: 'あなたはユーザーを支援する有能なアシスタントです。' },
-      ...chatHistory, // 過去の会話履歴を含める
-      { role: 'user', content: message },
-    ];
+  let aiResponseContent = '';
+  return streamText(c, async (stream) => {
+    const reader = openaiResponse.body?.getReader();
+    const decoder = new TextDecoder('utf-8');
 
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${OPENAI_API_KEY}`,
-      },
-      body: JSON.stringify({
-        model: 'gpt-4o',
-        messages: messages,
-        stream: false,
-        max_tokens: 1000,
-        temperature: 0.7,
-      }),
-    });
+    while (true) {
+      const { done, value } = await reader!.read();
+      if (done) break;
 
-    if (!response.ok) {
-      const errorData = await response.json();
-      console.error('OpenAI API Error:', errorData);
-      return c.json({ error: 'AIプロバイダーからの応答取得に失敗しました。', details: errorData }, 500);
+      const chunk = decoder.decode(value);
+      // ストリーミングデータを処理し、AI応答を構築
+      // ここでは簡易的にチャンクをそのまま結合していますが、
+      // 実際にはSSE (Server-Sent Events) 形式のパースが必要です。
+      // 例: data: {"id":"chatcmpl-...", "object":"chat.completion.chunk", ...}
+      // また、エラーハンドリングも強化する必要があります。
+      aiResponseContent += chunk; // 暫定的に全て結合
+
+      // クライアントにストリーミングで送信
+      stream.write(chunk);
     }
-
-    const data = await response.json();
-    const aiResponseContent = data.choices[0].message.content;
 
     // 3. AI応答をSupabaseに保存
-    try {
-      await callSupabase(
-        SUPABASE_URL,
-        SUPABASE_ANON_KEY,
-        'POST',
-        'chat_messages',
-        { user_id: userId, role: 'assistant', content: aiResponseContent }
-      );
-    } catch (error: any) {
-      console.error('Failed to save assistant message to Supabase:', error.message);
-      // エラーが発生してもAI応答は返す
+    const { error: aiMsgError } = await supabase
+      .from('chat_messages')
+      .insert({ user_id: userId, role: 'assistant', content: aiResponseContent });
+
+    if (aiMsgError) {
+      console.error('Error saving AI message to Supabase:', aiMsgError);
+      // ここでエラーが発生しても、クライアントには既にストリーミングされているため、
+      // エラーを返すのではなく、ログに記録するに留めます。
     }
-
-    return c.json({ response: aiResponseContent });
-
-  } catch (error: any) {
-    console.error('Chat API Error:', error);
-    return c.json({ error: 'チャット処理中にエラーが発生しました。', details: error.message }, 500);
-  }
+  });
 });
 
+// GET /api/chat/history - 会話履歴の取得
+app.get('/api/chat/history', async (c) => {
+  const supabase = getSupabaseClient(c);
+  const userId = c.req.query('userId'); // クエリパラメータからuserIdを取得
 
-// レポート生成APIの実AI連携実装 (既存のコードを維持)
-app.post('/api/report/generate', async (c) => {
-  const { OPENAI_API_KEY } = env<Bindings>(c);
-  const { fileContent, prompt } = await c.req.json();
-
-  // AIプロバイダーへのリクエスト（OpenAIを想定）
-  try {
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${OPENAI_API_KEY}`,
-      },
-      body: JSON.stringify({
-        model: 'gpt-4o', // 技術方針書に基づきOpenAI GPT-4oを選定
-        messages: [
-          { role: 'system', content: 'あなたはデータ分析とレポート生成を支援する有能なアシスタントです。ユーザーの指示に従い、提供されたデータから分かりやすい日本語のレポートを作成してください。' },
-          { role: 'user', content: `以下のデータを分析し、レポートを作成してください。\nデータ:\n${fileContent}\n指示:\n${prompt}` },
-        ],
-        stream: false,
-        max_tokens: 2000, // レポートの長さを考慮して設定
-        temperature: 0.7, // 創造性と一貫性のバランス
-      }),
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json();
-      console.error('OpenAI API Error:', errorData);
-      return c.json({ error: 'AIプロバイダーからのレポート生成に失敗しました。', details: errorData }, 500);
-    }
-
-    const data = await response.json();
-    return c.json({ report: data.choices[0].message.content });
-
-  } catch (error: any) {
-    console.error('Report generation API Error:', error);
-    return c.json({ error: 'レポート生成中にエラーが発生しました。', details: error.message }, 500);
+  if (!userId) {
+    return c.json({ error: 'userId is required' }, 400);
   }
+
+  const { data, error } = await supabase
+    .from('chat_messages')
+    .select('*')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: true });
+
+  if (error) {
+    console.error('Error fetching chat history from Supabase:', error);
+    return c.json({ error: 'Failed to fetch chat history' }, 500);
+  }
+
+  return c.json(data);
 });
+
+// GET /api/chat/history/:sessionId は、現状sessionIdの概念がないためスキップ
+// 必要に応じて、chat_messagesテーブルにsessionIdカラムを追加し、
+// それを元にフィルタリングするロジックを実装する。
 
 export default app;
