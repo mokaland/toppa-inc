@@ -41,7 +41,7 @@ graph TD
 
 ### バックエンド
 - **Cloudflare Workers** — エッジコンピューティング、グローバル低レイテンシ
-    - `xlsx`ライブラリの利用方針: `wrangler`によるバンドルと`node_compat = true`を設定し、Cloudflare Workersでの利用を試みる。問題が発生した場合は、CDN版/WASM版の利用を検討する。
+    - `xlsx`ライブラリの利用方針: `wrangler`によるバンドルと`node_compat = true`を設定し、Cloudflare Workersでの利用を試みる。この設定はNode.jsの組み込みモジュールの一部をエミュレートするが、完全な互換性を保証するものではないため、注意深く検証する必要がある。問題が発生した場合は、CDN版やWASM版の利用、または代替の解析ライブラリの検討を行う。
 - **Hono** — 軽量Webフレームワーク（Cloudflare Workers対応）
 
 ### データベース
@@ -59,6 +59,9 @@ graph TD
 
 ### AI（社内エージェント基盤）
 - **MiniMax M2.5 Standard** — AI社員の全ロールが使用するモデル
+  - $0.15/1M input, $1.20/1M output
+  - コーディング能力: SWE-Bench 80.2%（Claude Opus 4.6級）
+  - 24時間フル自律運営: 月¥1,700
 - **GCP Cloud Functions + Cloud Scheduler** — 1-2時間おきにセッション自動実行
 - **GitHub API** — AI社員がリポジトリにコミット・push
 
@@ -70,218 +73,177 @@ graph TD
 - **GitHub Actions** — PR時にLint + Type Check + テスト
 - **Cloudflare Wrangler** — `main` ブランチマージ時に自動デプロイ
 
-## 3. API設計
+## 3. アーキテクチャ詳細
 
-Founding Engineerの実装計画と進捗に基づき、以下のAPIエンドポイントを設計する。
+### 3-1. API設計
 
-### 3-1. 共通エラーレスポンス
+#### チャットアシスタントAPI
 
-全てのエラーレスポンスは以下の形式に従う。
+**エンドポイント**: `/api/chat`
+**メソッド**: `POST`
+**機能**: ユーザーからのチャットメッセージを受け取り、AIによる応答を生成し、会話履歴を保存する。
+**リクエスト**: `{
+    "message": "string",
+    "sessionId": "string" (optional)
+}`
+**レスポンス**: `{
+    "reply": "string",
+    "sessionId": "string"
+}`
+**リアルタイム性**: WebSocketまたはServer-Sent Events (SSE) を利用して、AI応答のストリーミング配信を検討する。これにより、ユーザー体験を向上させる。
 
-```json
-{
-    "errorCode": "string",  // エラーを一意に識別するコード (例: INVALID_REQUEST, UNAUTHORIZED, INTERNAL_SERVER_ERROR)
-    "message": "string"     // ユーザー向けの具体的なエラーメッセージ
-}
+**エンドポイント**: `/api/chat/history`
+**メソッド**: `GET`
+**機能**: 認証済みユーザーの会話履歴を取得する。
+**リクエスト**: なし
+**レスポンス**: `{
+    "history": [
+        { "role": "user", "content": "string", "timestamp": "ISO8601" },
+        { "role": "assistant", "content": "string", "timestamp": "ISO8601" }
+    ]
+}`
+
+**エンドポイント**: `/api/chat/history/:sessionId`
+**メソッド**: `GET`
+**機能**: 特定のセッションIDに紐づく会話履歴を取得する。
+**リクエスト**: なし
+**レスポンス**: `/api/chat/history` と同様の形式
+
+#### AIレポート生成API
+
+**エンドポイント**: `/api/report/generate`
+**メソッド**: `POST`
+**機能**: アップロードされたCSV/ExcelファイルをAIで分析し、レポートを生成する。
+**リクエスト**: `multipart/form-data`（ファイルとプロンプトを含む）
+`{
+    "file": "ファイルデータ",
+    "prompt": "分析指示プロンプト"
+}`
+**レスポンス**: `{
+    "reportId": "string",
+    "status": "processing" | "completed" | "failed",
+    "reportUrl": "string" (completedの場合)
+}`
+**ファイル処理**: Cloudflare Workersの制限を考慮し、大きなファイルはSupabase Storageに一時保存し、AI処理はバックグラウンドで行うことを検討する。または、ストリーミング処理可能なライブラリを選定する。
+
+**エンドポイント**: `/api/report/:reportId`
+**メソッド**: `GET`
+**機能**: 特定のレポートIDの生成状況と結果を取得する。
+**リクエスト**: なし
+**レスポンス**: `{
+    "reportId": "string",
+    "status": "processing" | "completed" | "failed",
+    "result": "string" (Markdown形式のレポート本文), 
+    "downloadUrl": "string" (PDF/MarkdownダウンロードURL)
+}`
+
+#### テンプレート書類生成API
+
+**エンドポイント**: `/api/document/generate`
+**メソッド**: `POST`
+**機能**: テンプレートと入力データに基づき、AIが見積書や請求書などの書類を生成する。
+**リクエスト**: `{
+    "templateId": "string",
+    "data": { "key": "value" },
+    "format": "pdf" | "markdown"
+}`
+**レスポンス**: `{
+    "documentId": "string",
+    "status": "processing" | "completed" | "failed",
+    "documentUrl": "string" (completedの場合)
+}`
+
+**エンドポイント**: `/api/document/:documentId`
+**メソッド**: `GET`
+**機能**: 特定の書類IDの生成状況と結果を取得する。
+**リクエスト**: なし
+**レスポンス**: `{
+    "documentId": "string",
+    "status": "processing" | "completed" | "failed",
+    "downloadUrl": "string"
+}`
+
+### 3-2. データベーススキーマ
+
+`docs/implementation-plan.md` に記載のスキーマを基本とし、各機能で必要なテーブル・カラムを追加する。
+
+#### `chat_messages` テーブル
+```sql
+CREATE TABLE chat_messages (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+    role VARCHAR(10) NOT NULL CHECK (role IN ('user', 'assistant', 'system')),
+    content TEXT NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+ALTER TABLE chat_messages ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Users can view own messages" ON chat_messages FOR SELECT USING (auth.uid() = user_id);
+CREATE POLICY "Users can insert own messages" ON chat_messages FOR INSERT WITH CHECK (auth.uid() = user_id);
 ```
 
-### 3-2. チャットアシスタントAPI
+#### `reports` テーブル
+```sql
+CREATE TABLE reports (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+    title VARCHAR(255) NOT NULL,
+    file_name VARCHAR(255),
+    file_url TEXT,
+    prompt TEXT NOT NULL,
+    result TEXT,
+    status VARCHAR(50) DEFAULT 'processing',
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+ALTER TABLE reports ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Users can view own reports" ON reports FOR SELECT USING (auth.uid() = user_id);
+CREATE POLICY "Users can insert own reports" ON reports FOR INSERT WITH CHECK (auth.uid() = user_id);
+```
 
-#### `POST /api/chat`
+#### `documents` テーブル
+```sql
+CREATE TABLE documents (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+    template_id VARCHAR(255) NOT NULL,
+    data JSONB NOT NULL,
+    format VARCHAR(50) NOT NULL,
+    file_url TEXT,
+    status VARCHAR(50) DEFAULT 'processing',
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+ALTER TABLE documents ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Users can view own documents" ON documents FOR SELECT USING (auth.uid() = user_id);
+CREATE POLICY "Users can insert own documents" ON documents FOR INSERT WITH CHECK (auth.uid() = user_id);
+```
 
-チャットメッセージを送信し、AIの応答を取得する。
+### 3-3. BYOK実装方針
 
-*   **機能**: ユーザーからのメッセージを受け取り、AIプロバイダーに転送して応答を生成し、会話履歴を保存する。
-*   **認証**: Supabase Authによるユーザー認証（JWT）
-*   **リクエストボディ**:
-    ```json
-    {
-        "sessionId": "string (UUID)", // 会話セッションID。新規セッションの場合は自動生成、既存セッションの場合はそのIDを使用
-        "message": "string",          // ユーザーの入力メッセージ
-        "model": "string",            // 使用するAIモデル ("OpenAI", "Anthropic", "Google" のいずれか)
-        "apiKey": "string"            // BYOKの場合のみ、ユーザーのAPIキー
-    }
-    ```
-*   **レスポンスボディ (成功 `200 OK`)**:
-    ```json
-    {
-        "sessionId": "string (UUID)", // 会話セッションID
-        "response": "string",         // AIからの応答メッセージ
-        "timestamp": "string (ISO 8601)" // 応答生成時刻
-    }
-    ```
-*   **エラーケース**:
-    *   `400 Bad Request`: `INVALID_REQUEST_FORMAT`, `INVALID_SESSION_ID`, `INVALID_MESSAGE`, `INVALID_MODEL`, `INVALID_API_KEY`
-    *   `401 Unauthorized`: `AUTHENTICATION_REQUIRED`, `INVALID_AUTH_TOKEN`
-    *   `403 Forbidden`: `API_KEY_EXPIRED`, `API_KEY_RATE_LIMITED`, `INSUFFICIENT_PERMISSION`
-    *   `500 Internal Server Error`: `AI_PROVIDER_ERROR`, `DATABASE_ERROR`, `UNKNOWN_ERROR`
+`docs/tech-direction.md` に記載のBYOK方針に従い、ユーザーのAPIキーはサーバーサイドで一時利用し、ログには記録せず、リクエスト完了後にメモリから破棄する。
 
-#### `GET /api/chat/history`
+### 3-4. セキュリティ要件
 
-ユーザーの会話履歴を取得する。
+`docs/tech-direction.md` に記載のセキュリティ方針を遵守する。
+- TLS 1.3による通信暗号化
+- Supabaseによるデータ暗号化 (AES-256)
+- Supabase Authによる認証・認可
+- Row Level Security (RLS)によるデータ分離
+- APIキーの安全な保存と利用
 
-*   **機能**: 認証されたユーザーの全ての会話セッションのリストを返す。
-*   **認証**: Supabase Authによるユーザー認証（JWT）
-*   **クエリパラメータ**:
-    *   `limit`: `number` (オプション, デフォルト: 10, 最大: 100) - 取得するセッションの最大数
-    *   `offset`: `number` (オプション, デフォルト: 0) - 取得を開始するオフセット
-*   **レスポンスボディ (成功 `200 OK`)**:
-    ```json
-    [
-        {
-            "sessionId": "string (UUID)",
-            "title": "string (セッションの最初のメッセージまたはAIが生成した要約)",
-            "lastMessageAt": "string (ISO 8601)"
-        },
-        // ...
-    ]
-    ```
-*   **エラーケース**:
-    *   `401 Unauthorized`: `AUTHENTICATION_REQUIRED`, `INVALID_AUTH_TOKEN`
-    *   `500 Internal Server Error`: `DATABASE_ERROR`, `UNKNOWN_ERROR`
+## 4. 開発規約
 
-#### `GET /api/chat/history/:sessionId`
+`docs/tech-direction.md` および `AI_PLAYBOOK.md` に記載の規約を遵守する。
 
-特定の会話セッションのメッセージ履歴を取得する。
+## 5. パフォーマンス要件
 
-*   **機能**: 指定されたセッションIDの会話メッセージのリストを返す。
-*   **認証**: Supabase Authによるユーザー認証（JWT）
-*   **パスパラメータ**:
-    *   `sessionId`: `string (UUID)` - 取得する会話セッションのID
-*   **レスポンスボディ (成功 `200 OK`)**:
-    ```json
-    [
-        {
-            "id": "string (UUID)",
-            "role": "string ('user' or 'assistant')",
-            "content": "string",
-            "timestamp": "string (ISO 8601)"
-        },
-        // ...
-    ]
-    ```
-*   **エラーケース**:
-    *   `401 Unauthorized`: `AUTHENTICATION_REQUIRED`, `INVALID_AUTH_TOKEN`
-    *   `403 Forbidden`: `ACCESS_DENIED` (他のユーザーのセッションにアクセスしようとした場合)
-    *   `404 Not Found`: `SESSION_NOT_FOUND`
-    *   `500 Internal Server Error`: `DATABASE_ERROR`, `UNKNOWN_ERROR`
+`docs/tech-direction.md` に記載のパフォーマンス要件を遵守する。
 
-### 3-3. AIレポート生成API
+## 6. 将来の技術拡張 (Q2以降の検討事項)
 
-#### `POST /api/report/generate`
+`docs/tech-direction.md` に記載の将来計画を継続して検討する。
 
-CSV/Excelファイルをアップロードし、自然言語の指示に基づいてAIにレポートを生成させる。
+## 7. 技術的リスクと対策
 
-*   **機能**: ユーザーがアップロードしたファイルを解析し、プロンプトと共にAIプロバイダーに送信してレポートを生成する。生成されたレポートは保存され、ユーザーに返却される。
-*   **認証**: Supabase Authによるユーザー認証（JWT）
-*   **リクエストボディ**: `multipart/form-data`
-    *   `file`: `File` (CSVまたはExcelファイル)
-    *   `prompt`: `string` (レポート生成のための自然言語指示)
-    *   `model`: `string` (使用するAIモデル。例: "OpenAI")
-    *   `apiKey`: `string` (BYOKの場合のみ)
-*   **ファイルアップロードの考慮事項**:
-    *   Cloudflare Workers経由でSupabase Storageに一時的にファイルを保存する。
-    *   ファイルサイズ制限: 10MB (Cloudflare Workersの制限に準拠)
-    *   対応ファイル形式: `.csv`, `.xlsx`, `.xls`
-    *   `xlsx`ライブラリは`wrangler`の`node_compat = true`設定で対応を試みる。
-*   **AI連携のプロンプト設計に関する考慮事項**:
-    *   アップロードされたデータのスキーマ情報（ヘッダーなど）をAIに渡すことで、正確な分析を促す。
-    *   ユーザーのプロンプトとデータスキーマを組み合わせたシステムプロンプトを動的に生成する。
-    *   データ分析とレポート生成のステップを明確にAIに指示する。
-*   **レスポンスボディ (成功 `200 OK`)**:
-    ```json
-    {
-        "reportId": "string (UUID)",
-        "title": "string (AIが生成したレポートタイトル)",
-        "content": "string (Markdown形式のレポート本文)",
-        "downloadUrl": "string (生成されたレポートのダウンロードURL、オプション)",
-        "timestamp": "string (ISO 8601)"
-    }
-    ```
-*   **エラーケース**:
-    *   `400 Bad Request`: `INVALID_FILE_TYPE`, `FILE_TOO_LARGE`, `INVALID_PROMPT`, `FILE_UPLOAD_FAILED`
-    *   `401 Unauthorized`: `AUTHENTICATION_REQUIRED`
-    *   `403 Forbidden`: `API_KEY_EXPIRED`
-    *   `500 Internal Server Error`: `AI_PROCESSING_ERROR`, `DATABASE_ERROR`, `STORAGE_ERROR`
-
-### 3-4. テンプレート書類生成API
-
-#### `POST /api/template/generate`
-
-テンプレートと入力データに基づいて書類を自動生成する。
-
-*   **機能**: ユーザーが選択したテンプレートと入力データを受け取り、AIまたは内部ロジックで書類（見積書、請求書など）を生成する。
-*   **認証**: Supabase Authによるユーザー認証（JWT）
-*   **リクエストボディ**:
-    ```json
-    {
-        "templateId": "string (UUID)", // 使用するテンプレートのID
-        "data": {                      // テンプレートに埋め込むデータ (JSONオブジェクト)
-            "companyName": "株式会社TOPPA",
-            "itemName": "AI導入コンサルティング",
-            "price": 100000,
-            "quantity": 1
-        },
-        "outputFormat": "string",      // 出力形式 ("pdf", "markdown" など)
-        "model": "string",             // AIを使用する場合のモデル
-        "apiKey": "string"             // BYOKの場合のみ
-    }
-    ```
-*   **テンプレート管理の考慮事項**:
-    *   ユーザーはカスタムテンプレートをアップロード・管理できる。
-    *   テンプレートはSupabase Storageに保存し、メタデータはSupabase PostgreSQLで管理する。
-    *   テンプレートにはプレースホルダー構文（例: `{{companyName}}`）を使用する。
-*   **レスポンスボディ (成功 `200 OK`)**:
-    ```json
-    {
-        "documentId": "string (UUID)",
-        "title": "string (生成された書類のタイトル)",
-        "downloadUrl": "string (生成された書類のダウンロードURL)",
-        "timestamp": "string (ISO 8601)"
-    }
-    ```
-*   **エラーケース**:
-    *   `400 Bad Request`: `INVALID_TEMPLATE_ID`, `INVALID_DATA_FORMAT`, `TEMPLATE_RENDER_ERROR`, `INVALID_OUTPUT_FORMAT`
-    *   `401 Unauthorized`: `AUTHENTICATION_REQUIRED`
-    *   `403 Forbidden`: `ACCESS_DENIED`
-    *   `404 Not Found`: `TEMPLATE_NOT_FOUND`
-    *   `500 Internal Server Error`: `AI_PROCESSING_ERROR`, `DATABASE_ERROR`
-
-## 4. セキュリティ要件 (API設計への適用)
-
-`docs/tech-direction.md` に記載されたセキュリティ方針を各APIエンドポイントに適用する。
-
-### 4-1. 認証・認可
-
-*   **Supabase Auth**: 全てのAPIエンドポイントはJWTによる認証を必須とする。
-*   **RLS (Row Level Security)**: データベースレベルでユーザーが自分のデータのみにアクセスできるよう強制する。
-    *   例: `chat_messages` テーブルでは `auth.uid() = user_id` ポリシーを適用。
-*   **APIキーの認可**:
-    *   BYOKの場合、提供されたAPIキーが有効であるか、利用制限に達していないかをAIプロバイダーに問い合わせて確認する。
-    *   TOPPA Inc.のマネージドAPIキーを使用する場合は、Proプランの購読状況を確認する。
-
-### 4-2. BYOK セキュリティ
-
-*   ユーザーから提供されたAPIキーは、Cloudflare Workersの実行コンテキストでのみ一時的に使用し、永続的に保存しない。
-*   APIキーはログに記録せず、リクエスト処理完了後、速やかにメモリから破棄されるように実装する。
-*   APIキーの有効期限やレートリミット超過などのエラーは、ユーザーに分かりやすくフィードバックする。
-
-## 5. 開発規約 (API開発に特化)
-
-### 5-1. コード品質
-
-*   Honoのミドルウェアを活用し、リクエストバリデーション、エラーハンドリング、認証処理を一元化する。
-*   APIエンドポイントごとにJSDocコメントを記述し、機能、パラメータ、レスポンス、エラーを明確にする。
-
-### 5-2. テスト
-
-*   **ユニットテスト**: 各APIハンドラのビジネスロジックに対してVitestでテストを記述する（カバレッジ80%目標）。
-*   **結合テスト**: Cloudflare WorkersのLocal開発環境（`wrangler dev`）を利用し、SupabaseやAIプロバイダーとの連携を含む結合テストを実施する。
-*   **E2Eテスト**: Playwrightを用いて、フロントエンドからのAPI呼び出しを含む主要なユーザーフローをテストする。
-
-## 6. 将来の技術拡張 (API関連)
-
-*   **Webhook**: レポート生成完了時や特定イベント発生時に外部システムへ通知するWebhook APIの提供。
-*   **バッチ処理API**: 大量のデータ処理や定型レポート生成のための非同期バッチ処理API。
-*   **リアルタイムチャット**: WebSocketsを用いたリアルタイムなチャット応答（現在の設計はポーリングベースを想定）。
-
+`docs/tech-direction.md` に記載のリスクと対策を継続して管理する。
+特に、Cloudflare WorkersのEdge Runtimeの制約（Node.js互換性など）については、Founding Engineerと密に連携し、適切なライブラリ選定と実装アプローチを確立する。
