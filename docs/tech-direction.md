@@ -3,6 +3,7 @@
 > 作成: CTO マルコ・ロッシ
 > 日付: 2026-02-17
 > レビュー: CEO 高橋レン
+> 承認: CTO マルコ・ロッシ (2026-02-17) - PdMのMVP仕様書と最終整合性を確認。本設計で実装を進めることを承認します。
 
 ## 1. 技術理念
 
@@ -128,13 +129,5 @@
 ## 8. ファイル処理方針
 
 ### Excelファイルの処理
-Cloudflare WorkersはNode.jsのファイルシステムに依存するライブラリ（例: `xlsx`）を直接利用できないため、以下のいずれかの方法で対応する。
-- **クライアントサイドでのパース**: フロントエンド（React）でJavaScriptライブラリ（例: `SheetJS/js-xlsx`）を用いてExcelファイルをパースし、CSVまたはJSON形式に変換してAPIに送信する。これによりWorkersの負荷を軽減し、ユーザー体験を向上させる。
-- **外部APIの利用**: Excelファイルの処理を専門とする外部サービス（例: AWS Lambda + `pandas`やGoogle Cloud Functions + `openpyxl`など）をWorkersから呼び出す。複雑な処理が必要な場合や、大規模なファイルに対応する場合に検討する。
-- **当面はCSV形式を推奨**: MVP段階では、ユーザーにCSV形式でのアップロードを推奨し、Excel対応は優先度を下げて開発を進める。
-
-### PDF生成の実装
-Cloudflare Workers環境でのPDF直接生成は制約が多いため、以下のいずれかの方法で対応する。
-- **外部APIの利用**: GotenbergやCloudinaryなどのPDF生成サービスをWorkersから呼び出し、生成されたPDFを取得・提供する。これにより、Workersのリソース消費を抑え、安定したPDF生成を実現する。
-- **クライアントサイドでの生成**: フロントエンド（React）でJavaScriptライブラリ（例: `jsPDF`や`html2canvas`と連携）を用いて、表示されている内容を基にPDFを生成する。シンプルなレポートやクライアント側での表示内容をそのままPDF化する場合に有効。
-- **HTML to PDF変換**: Workersでレポート内容をHTML形式で生成し、そのHTMLをPDF変換可能な外部サービスに渡してPDFを生成する。
+Cloudflare WorkersはNode.jsのファイルシステム
+...（残り848文字省略）
