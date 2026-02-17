@@ -1,72 +1,45 @@
+import { Hono } from 'hono';
+import { env } from 'hono/adapter';
+import { createClient } from '@supabase/supabase-js';
 
-// workers/src/auth.ts
+const auth = new Hono();
 
-import { createClient, SupabaseClient } from '@supabase/supabase-js';
+auth.post('/signup', async (c) => {
+  const { SUPABASE_URL, SUPABASE_ANON_KEY } = env<{ SUPABASE_URL: string; SUPABASE_ANON_KEY: string }>(c);
+  const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-// 環境変数からSupabaseの設定をロードするヘルパー関数（Cloudflare Workers向け）
-export function getSupabaseClient(env: { SUPABASE_URL: string; SUPABASE_ANON_KEY: string }): SupabaseClient {
-    if (!env.SUPABASE_URL || !env.SUPABASE_ANON_KEY) {
-        throw new Error('Supabase URL and Anon Key are required environment variables.');
-    }
-    return createClient(env.SUPABASE_URL, env.SUPABASE_ANON_KEY);
-}
+  const { email, password } = await c.req.json();
 
-/**
- * ユーザー登録処理
- * @param {SupabaseClient} supabase - Supabaseクライアントインスタンス
- * @param {string} email - ユーザーのメールアドレス
- * @param {string} password - ユーザーのパスワード
- * @returns {Promise<{ user: any | null, error: any | null }>}
- */
-export async function signUpUser(supabase: SupabaseClient, email: string, password: string): Promise<{ user: any | null, error: any | null }> {
-    const { data, error } = await supabase.auth.signUp({
-        email: email,
-        password: password,
-    });
+  // Supabaseでのユーザー登録処理（スタブ）
+  const { data, error } = await supabase.auth.signUp({
+    email,
+    password,
+  });
 
-    if (error) {
-        console.error('Error signing up user:', error.message);
-        return { user: null, error: error };
-    }
+  if (error) {
+    return c.json({ error: error.message }, 400);
+  }
 
-    return { user: data.user, error: null };
-}
+  return c.json({ message: 'ユーザー登録リクエストを送信しました。メールを確認してください。', user: data.user });
+});
 
-/**
- * ユーザーログイン処理
- * @param {SupabaseClient} supabase - Supabaseクライアントインスタンス
- * @param {string} email - ユーザーのメールアドレス
- * @param {string} password - ユーザーのパスワード
- * @returns {Promise<{ user: any | null, error: any | null }>}
- */
-export async function signInUser(supabase: SupabaseClient, email: string, password: string): Promise<{ user: any | null, error: any | null }> {
-    const { data, error } = await supabase.auth.signInWithPassword({
-        email: email,
-        password: password,
-    });
+auth.post('/login', async (c) => {
+  const { SUPABASE_URL, SUPABASE_ANON_KEY } = env<{ SUPABASE_URL: string; SUPABASE_ANON_KEY: string }>(c);
+  const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-    if (error) {
-        console.error('Error signing in user:', error.message);
-        return { user: null, error: error };
-    }
+  const { email, password } = await c.req.json();
 
-    return { user: data.user, error: null };
-}
+  // Supabaseでのログイン処理（スタブ）
+  const { data, error } = await supabase.auth.signInWithPassword({
+    email,
+    password,
+  });
 
-/**
- * ユーザーログアウト処理
- * @param {SupabaseClient} supabase - Supabaseクライアントインスタンス
- * @returns {Promise<{ error: any | null }>}
- */
-export async function signOutUser(supabase: SupabaseClient): Promise<{ error: any | null }> {
-    const { error } = await supabase.auth.signOut();
+  if (error) {
+    return c.json({ error: error.message }, 401);
+  }
 
-    if (error) {
-        console.error('Error signing out user:', error.message);
-        return { error: error };
-    }
+  return c.json({ message: 'ログイン成功', user: data.user, session: data.session });
+});
 
-    return { error: null };
-}
-
-// 他の認証関連ヘルパー関数もここに追加する
+export default auth;
