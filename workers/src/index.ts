@@ -6,7 +6,7 @@ import { createClient } from '@supabase/supabase-js';
 type Bindings = {
   SUPABASE_URL: string;
   SUPABASE_ANON_KEY: string;
-  // AI_PROVIDER_API_KEY: string; // 将来的にAIプロバイダー連携時に追加
+  AI_PROVIDER_API_KEY: string; // AIプロバイダー連携時に追加
 };
 
 const app = new Hono();
@@ -17,7 +17,7 @@ app.onError((err, c) => {
   return c.json({ error: 'Internal Server Error' }, 500);
 });
 
-// POST /api/chat エンドポイント
+// POST /api/chat エンドポイント (既存)
 app.post('/api/chat', async (c) => {
   const { SUPABASE_URL, SUPABASE_ANON_KEY } = env<Bindings>(c);
   
@@ -49,12 +49,10 @@ app.post('/api/chat', async (c) => {
   // 例:
   // const aiProvider = new OpenAI(AI_PROVIDER_API_KEY);
   // const aiResponse = await aiProvider.chat.completions.create({...});
-  const aiResponseContent = `AIアシスタントからの応答: "${message}" についてですね。現在、この機能は開発中です。`;
-
-  // AI応答を保存
+  const aiResponseContent = `AIからの返信: ${message}`;
   const { data: aiMessage, error: aiMessageError } = await supabase
     .from('chat_messages')
-    .insert([{ user_id: userId, role: 'assistant', content: aiResponseContent }])
+    .insert([{ user_id: userId, role: 'ai', content: aiResponseContent }])
     .select();
 
   if (aiMessageError) {
@@ -68,34 +66,61 @@ app.post('/api/chat', async (c) => {
   });
 });
 
-// GET /api/chat/history エンドポイント (追加)
-app.get('/api/chat/history', async (c) => {
-  const { SUPABASE_URL, SUPABASE_ANON_KEY } = env<Bindings>(c);
+// POST /api/report エンドポイント (新規)
+app.post('/api/report', async (c) => {
+  const { SUPABASE_URL, SUPABASE_ANON_KEY, AI_PROVIDER_API_KEY } = env<Bindings>(c);
 
-  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
-    return c.json({ error: 'Supabase environment variables are not set' }, 500);
+  if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !AI_PROVIDER_API_KEY) {
+    return c.json({ error: 'Required environment variables are not set' }, 500);
   }
 
   const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-  const { userId } = c.req.query();
+  const { userId, reportType, dataContext } = await c.req.json();
 
-  if (!userId) {
-    return c.json({ error: 'userId is required' }, 400);
+  if (!userId || !reportType || !dataContext) {
+    return c.json({ error: 'userId, reportType, and dataContext are required' }, 400);
   }
 
-  const { data: messages, error } = await supabase
-    .from('chat_messages')
-    .select('*')
-    .eq('user_id', userId)
-    .order('created_at', { ascending: true });
+  // TODO: AIプロバイダーにレポート生成をリクエストする
+  // 例: MiniMax M2.5 Standard を利用
+  // const aiProviderResponse = await fetch('https://api.minimax.chat/v1/chat/completion', {
+  //   method: 'POST',
+  //   headers: {
+  //     'Authorization': `Bearer ${AI_PROVIDER_API_KEY}`,
+  //     'Content-Type': 'application/json',
+  //   },
+  //   body: JSON.stringify({
+  //     model: 'MiniMax-M2.5-Standard',
+  //     messages: [
+  //       { role: 'system', content: 'You are a helpful assistant that generates business reports.' },
+  //       { role: 'user', content: `Generate a ${reportType} report based on the following data: ${JSON.stringify(dataContext)}` }
+  //     ],
+  //     max_tokens: 1000,
+  //   }),
+  // });
+  // const aiReport = await aiProviderResponse.json();
+  // const generatedReportContent = aiReport.choices[0].message.content;
 
-  if (error) {
-    console.error('Error fetching chat history:', error);
-    return c.json({ error: 'Failed to fetch chat history' }, 500);
+  // AIレポートをモック
+  const generatedReportContent = `これは${reportType}レポートのモックです。データコンテキスト: ${JSON.stringify(dataContext)}`;
+
+  // 生成されたレポートを保存
+  // TODO: `reports` テーブルのスキーマを定義し、データを保存する
+  const { data: report, error: reportError } = await supabase
+    .from('reports') // 仮のテーブル名 'reports'
+    .insert([{ user_id: userId, type: reportType, content: generatedReportContent }])
+    .select();
+
+  if (reportError) {
+    console.error('Error saving report:', reportError);
+    return c.json({ error: 'Failed to save report' }, 500);
   }
 
-  return c.json({ history: messages });
+  return c.json({
+    message: 'Report generated successfully',
+    report: report[0],
+  });
 });
 
 export default app;
