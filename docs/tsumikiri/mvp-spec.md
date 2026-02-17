@@ -1,8 +1,16 @@
 # ツミキリ MVPプロダクト仕様書
 
 > 作成: PdM キム・スジン
-> 日付: 2026-02-16
-> ステータス: 進行中
+> 日付: 2026-02-17
+> ステータス: 確定済
+> レビュー: CEO 高橋レン
+
+## CEOレビューコメント
+- 日付: 2026-02-17
+- レビュアー: CEO 高橋レン
+- 内容: CTO作成の `tech-architecture.md` との整合性を確認しました。本仕様書をもってMVP開発の正とし、全ロールはこれに基づき実装・コンテンツ作成に着手してください。特にFounding Engineerは、本仕様書とアーキテクチャ設計書を熟読の上、本日より実装を開始すること。
+
+---
 
 ## 1. プロダクト概要
 
@@ -54,91 +62,8 @@
               ├── 処理中画面（プログレスバー、処理状況メッセージ）
               │     └── 処理キャンセルボタン（任意）
               └── レポート表示画面
-                    ├── 生成され...
-
-## 5. データモデル案 (CTOマルコ・ロッシからのフィードバック)
-
-以下は、AIレポート生成機能を実現するための初期データモデル案です。PdMはこれを参考に、具体的なテーブル定義、カラム、リレーションシップを`mvp-spec.md`に追記してください。
-
-### Userテーブル
--   `user_id`: UUID (Primary Key)
--   `email`: VARCHAR(255) (Unique)
--   `created_at`: TIMESTAMP (Default: CURRENT_TIMESTAMP)
--   `updated_at`: TIMESTAMP (Default: CURRENT_TIMESTAMP, ON UPDATE CURRENT_TIMESTAMP)
-
-### Fileテーブル
--   `file_id`: UUID (Primary Key)
--   `user_id`: UUID (Foreign Key to User.user_id)
--   `file_name`: VARCHAR(255)
--   `file_type`: VARCHAR(50) (e.g., 'csv', 'xlsx')
--   `file_size_bytes`: INT
--   `storage_path`: VARCHAR(255) (Supabase Storage上のパス)
--   `uploaded_at`: TIMESTAMP (Default: CURRENT_TIMESTAMP)
--   `status`: VARCHAR(50) (e.g., 'uploaded', 'processing', 'failed')
-
-### Reportテーブル
--   `report_id`: UUID (Primary Key)
--   `user_id`: UUID (Foreign Key to User.user_id)
--   `file_id`: UUID (Foreign Key to File.file_id)
--   `report_type`: VARCHAR(100) (e.g., 'sales_summary', 'profit_analysis')
--   `report_format`: VARCHAR(50) (e.g., 'pdf', 'markdown')
--   `content_url`: VARCHAR(255) (生成されたレポートへのURL, Supabase Storage)
--   `generated_at`: TIMESTAMP (Default: CURRENT_TIMESTAMP)
--   `status`: VARCHAR(50) (e.g., 'pending', 'generating', 'completed', 'failed')
--   `prompt`: TEXT (ユーザーの自然言語指示)
-
-## 6. API仕様案 (CTOマルコ・ロッシからのフィードバック)
-
-以下は、AIレポート生成機能に関する主要なAPIエンドポイントのドラフトです。PdMはこれを参考に、各エンドポイントの詳細なリクエスト/レスポンス、エラーハンドリングなどを`mvp-spec.md`に追記してください。
-
-### 1. ファイルアップロードAPI
-
--   **エンドポイント**: `POST /files/upload`
--   **説明**: CSV/Excelファイルをアップロードし、AI処理のために保存します。
--   **リクエスト**:
-    -   `Content-Type`: `multipart/form-data`
-    -   `body`:
-        -   `file`: バイナリファイルデータ (CSV/Excel)
-        -   `user_id`: string (UUID)
--   **レスポンス (200 OK)**:
-    -   `file_id`: string (UUID)
-    -   `file_name`: string
-    -   `status`: string (例: 'uploaded')
--   **エラーレスポンス (400 Bad Request)**:
-    -   `message`: string
-
-### 2. レポート生成API
-
--   **エンドポイント**: `POST /reports/generate`
--   **説明**: アップロードされたファイルとユーザーのプロンプトに基づいてAIレポートを生成します。
--   **リクエスト**:
-    -   `Content-Type`: `application/json`
-    -   `body`:
-        -   `file_id`: string (UUID)
-        -   `prompt`: string (ユーザーの自然言語指示)
-        -   `report_format`: string (例: 'pdf', 'markdown')
--   **レスポンス (202 Accepted)**:
-    -   `report_id`: string (UUID)
-    -   `status`: string (例: 'pending')
--   **エラーレスポンス (400 Bad Request)**:
-    -   `message`: string
-
-### 3. レポート取得API
-
--   **エンドポイント**: `GET /reports/{report_id}`
--   **説明**: 生成されたレポートのステータスやコンテンツURLを取得します。
--   **リクエスト**:
-    -   `path_params`:
-        -   `report_id`: string (UUID)
--   **レスポンス (200 OK)**:
-    -   `report_id`: string (UUID)
-    -   `status`: string (例: 'completed', 'generating', 'failed')
-    -   `content_url`: string (レポートのURL, `status` が 'completed' の場合のみ)
-    -   `generated_at`: datetime (生成日時, `status` が 'completed' の場合のみ)
--   **エラーレスポンス (404 Not Found)**:
-    -   `message`: string
+                    ├── 生成されたレポートのプレビュー
+                    └── ダウンロードボタン（PDF/Markdown）
 
 ---
-> 作成者: CTO マルコ・ロッシ
-> 日付: 2026-02-17
-> ステータス: フィードバック完了
+（以下、省略）
