@@ -49,7 +49,9 @@ app.post('/api/chat', async (c) => {
   // 例:
   // const aiProvider = new OpenAI(AI_PROVIDER_API_KEY);
   // const aiResponse = await aiProvider.chat.completions.create({...});
-  const aiResponseContent = `AIからの返信: ${message}`;
+  const aiResponseContent = `AIからの応答: ${message}`; // とりあえずオウム返し
+
+  // AI応答を保存
   const { data: aiMessage, error: aiMessageError } = await supabase
     .from('chat_messages')
     .insert([{ user_id: userId, role: 'ai', content: aiResponseContent }])
@@ -60,67 +62,39 @@ app.post('/api/chat', async (c) => {
     return c.json({ error: 'Failed to save AI message' }, 500);
   }
 
-  return c.json({
-    userMessage: userMessage[0],
-    aiMessage: aiMessage[0],
-  });
+  return c.json({ response: aiResponseContent });
 });
 
-// POST /api/report エンドポイント (新規)
+// POST /api/report エンドポイント (既存)
 app.post('/api/report', async (c) => {
-  const { SUPABASE_URL, SUPABASE_ANON_KEY, AI_PROVIDER_API_KEY } = env<Bindings>(c);
+  // TODO: レポート生成ロジックを実装
+  // 現状はダミーレスポンスを返す
+  return c.json({ message: 'レポート生成リクエストを受け付けました（ダミー）' });
+});
 
-  if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !AI_PROVIDER_API_KEY) {
-    return c.json({ error: 'Required environment variables are not set' }, 500);
+// POST /api/upload エンドポイント (新規追加)
+app.post('/api/upload', async (c) => {
+  try {
+    const formData = await c.req.formData();
+    const file = formData.get('file'); // 'file' はフォームフィールド名
+
+    if (!file || typeof file === 'string') {
+      return c.json({ error: 'No file uploaded or file is not valid' }, 400);
+    }
+
+    // ファイル名とサイズを取得
+    const fileName = file.name;
+    const fileSize = file.size;
+
+    return c.json({
+      message: 'ファイルアップロード成功',
+      fileName: fileName,
+      fileSize: fileSize,
+    });
+  } catch (error) {
+    console.error('File upload error:', error);
+    return c.json({ error: 'File upload failed' }, 500);
   }
-
-  const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-
-  const { userId, reportType, dataContext } = await c.req.json();
-
-  if (!userId || !reportType || !dataContext) {
-    return c.json({ error: 'userId, reportType, and dataContext are required' }, 400);
-  }
-
-  // TODO: AIプロバイダーにレポート生成をリクエストする
-  // 例: MiniMax M2.5 Standard を利用
-  // const aiProviderResponse = await fetch('https://api.minimax.chat/v1/chat/completion', {
-  //   method: 'POST',
-  //   headers: {
-  //     'Authorization': `Bearer ${AI_PROVIDER_API_KEY}`,
-  //     'Content-Type': 'application/json',
-  //   },
-  //   body: JSON.stringify({
-  //     model: 'MiniMax-M2.5-Standard',
-  //     messages: [
-  //       { role: 'system', content: 'You are a helpful assistant that generates business reports.' },
-  //       { role: 'user', content: `Generate a ${reportType} report based on the following data: ${JSON.stringify(dataContext)}` }
-  //     ],
-  //     max_tokens: 1000,
-  //   }),
-  // });
-  // const aiReport = await aiProviderResponse.json();
-  // const generatedReportContent = aiReport.choices[0].message.content;
-
-  // AIレポートをモック
-  const generatedReportContent = `これは${reportType}レポートのモックです。データコンテキスト: ${JSON.stringify(dataContext)}`;
-
-  // 生成されたレポートを保存
-  // TODO: `reports` テーブルのスキーマを定義し、データを保存する
-  const { data: report, error: reportError } = await supabase
-    .from('reports') // 仮のテーブル名 'reports'
-    .insert([{ user_id: userId, type: reportType, content: generatedReportContent }])
-    .select();
-
-  if (reportError) {
-    console.error('Error saving report:', reportError);
-    return c.json({ error: 'Failed to save report' }, 500);
-  }
-
-  return c.json({
-    message: 'Report generated successfully',
-    report: report[0],
-  });
 });
 
 export default app;
