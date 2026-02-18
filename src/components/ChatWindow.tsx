@@ -14,20 +14,22 @@ const ChatWindow = () => {
   ]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
-  const endRef = useRef<HTMLDivElement>(null);
+  const [error, setError] = useState<string | null>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: 'smooth' });
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  const send = async () => {
+  const handleSend = async () => {
     if (!input.trim() || loading) return;
 
-    const userMsg: ChatMessage = { id: String(Date.now()), role: 'user', content: input };
-    const newMessages = [...messages, userMsg];
-    setMessages(newMessages);
+    const userMessage: ChatMessage = { id: String(Date.now()), role: 'user', content: input };
+    const updatedMessages = [...messages, userMessage];
+    setMessages(updatedMessages);
     setInput('');
     setLoading(true);
+    setError(null);
 
     try {
       const res = await fetch(API_URL, {
@@ -35,69 +37,68 @@ const ChatWindow = () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'chat',
-          messages: newMessages.map(m => ({ role: m.role, content: m.content })),
+          messages: updatedMessages.map(({ role, content }) => ({ role, content })),
         }),
       });
 
-      const data = await res.json();
-      if (data.response) {
-        setMessages(prev => [...prev, {
-          id: String(Date.now()),
-          role: 'assistant',
-          content: data.response,
-        }]);
-      } else {
-        throw new Error(data.error || 'Unknown error');
+      if (!res.ok) {
+        throw new Error(`API error: ${res.status} ${res.statusText}`);
       }
-    } catch (err) {
-      setMessages(prev => [...prev, {
-        id: String(Date.now()),
-        role: 'assistant',
-        content: 'エラーが発生しました。もう一度お試しください。',
-      }]);
+
+      const data = await res.json();
+
+      if (data.response) {
+        const assistantMessage: ChatMessage = { id: String(Date.now() + 1), role: 'assistant', content: data.response };
+        setMessages(prevMessages => [...prevMessages, assistantMessage]);
+      } else {
+        throw new Error('予期しないレスポンス形式です。');
+      }
+    } catch (e) {
+      console.error(e);
+      setError('メッセージの送信に失敗しました。時間をおいて再度お試しください。');
+      // 失敗したユーザーメッセージをUIから削除
+      setMessages(prevMessages => prevMessages.slice(0, -1));
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="flex flex-col h-full bg-white rounded-lg shadow-lg">
-      <div className="flex-grow overflow-y-auto p-4 space-y-3">
-        {messages.map(msg => (
+    <div className="flex flex-col h-[calc(100vh-150px)] bg-gray-50">
+      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        {messages.map((msg) => (
           <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-            <div className={`max-w-[80%] px-4 py-2 rounded-2xl whitespace-pre-wrap ${
-              msg.role === 'user'
-                ? 'bg-indigo-600 text-white'
-                : 'bg-gray-100 text-gray-800'
-            }`}>
-              {msg.content}
+            <div className={`max-w-lg px-4 py-2 rounded-lg ${msg.role === 'user' ? 'bg-blue-500 text-white' : 'bg-white border'}`}>
+              <p style={{ whiteSpace: 'pre-wrap' }}>{msg.content}</p>
             </div>
           </div>
         ))}
-        {loading && (
-          <div className="flex justify-start">
-            <div className="bg-gray-100 text-gray-500 px-4 py-2 rounded-2xl animate-pulse">考え中...</div>
+        <div ref={messagesEndRef} />
+      </div>
+      <div className="p-4 border-t bg-white">
+        {error && (
+          <div className="text-red-500 text-sm mb-2 p-2 bg-red-100 border border-red-400 rounded">
+            {error}
           </div>
         )}
-        <div ref={endRef} />
-      </div>
-      <div className="border-t p-3 flex gap-2">
-        <input
-          type="text"
-          className="flex-grow border rounded-full px-4 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-          placeholder="メッセージを入力..."
-          value={input}
-          onChange={e => setInput(e.target.value)}
-          onKeyDown={e => e.key === 'Enter' && send()}
-          disabled={loading}
-        />
-        <button
-          className="bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2 px-5 rounded-full disabled:opacity-50 transition-colors"
-          onClick={send}
-          disabled={loading || !input.trim()}
-        >
-          送信
-        </button>
+        <div className="flex items-center space-x-2">
+          <input
+            type="text"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyPress={(e) => e.key === 'Enter' && handleSend()}
+            placeholder="メッセージを入力..."
+            className="flex-1 p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            disabled={loading}
+          />
+          <button
+            onClick={handleSend}
+            className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:bg-blue-300"
+            disabled={loading}
+          >
+            {loading ? '送信中...' : '送信'}
+          </button>
+        </div>
       </div>
     </div>
   );
