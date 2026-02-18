@@ -16,4 +16,11 @@ export default defineConfig({
       input: 'index.html',
     },
   },
+  test: {
+    exclude: [
+      '**/node_modules/**',
+      '**/dist/**',
+      '**/workers/**',
+    ],
+  },
 });
