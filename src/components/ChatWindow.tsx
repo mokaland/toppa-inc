@@ -1,4 +1,6 @@
-import React, { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
+
+const API_URL = 'https://us-central1-gen-lang-client-0841897546.cloudfunctions.net/toppa_app_api';
 
 interface ChatMessage {
   id: string;
@@ -6,102 +8,93 @@ interface ChatMessage {
   content: string;
 }
 
-const ChatWindow: React.FC = () => {
+const ChatWindow = () => {
   const [messages, setMessages] = useState<ChatMessage[]>([
-    { id: '1', role: 'assistant', content: 'こんにちは！何かお手伝いできることはありますか？' },
+    { id: '1', role: 'assistant', content: 'こんにちは！ツミキリです。経営や事務作業のお手伝いをします。何でも聞いてください。' },
   ]);
-  const [inputMessage, setInputMessage] = useState<string>('');
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  };
+  const [input, setInput] = useState('');
+  const [loading, setLoading] = useState(false);
+  const endRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    scrollToBottom();
+    endRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  const handleSendMessage = async () => {
-    if (inputMessage.trim()) {
-      const newUserMessage: ChatMessage = {
-        id: String(messages.length + 1),
-        role: 'user',
-        content: inputMessage,
-      };
-      setMessages((prevMessages) => [...prevMessages, newUserMessage]);
-      setInputMessage('');
+  const send = async () => {
+    if (!input.trim() || loading) return;
 
-      try {
-        const response = await fetch('/api/chat', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ content: inputMessage }),
-        });
+    const userMsg: ChatMessage = { id: String(Date.now()), role: 'user', content: input };
+    const newMessages = [...messages, userMsg];
+    setMessages(newMessages);
+    setInput('');
+    setLoading(true);
 
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
-        }
+    try {
+      const res = await fetch(API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'chat',
+          messages: newMessages.map(m => ({ role: m.role, content: m.content })),
+        }),
+      });
 
-        const data = await response.json();
-        const assistantResponse: ChatMessage = {
-          id: String(messages.length + 2),
+      const data = await res.json();
+      if (data.response) {
+        setMessages(prev => [...prev, {
+          id: String(Date.now()),
           role: 'assistant',
-          content: data.response, // APIからの応答を使用
-        };
-        setMessages((prevMessages) => [...prevMessages, assistantResponse]);
-      } catch (error) {
-        console.error('Failed to send message:', error);
-        const errorMessage: ChatMessage = {
-          id: String(messages.length + 2),
-          role: 'assistant',
-          content: 'メッセージの送信中にエラーが発生しました。もう一度お試しください。メッセージの送信中にエラーが発生しました。もう一度お試しください。',
-        };
-        setMessages((prevMessages) => [...prevMessages, errorMessage]);
+          content: data.response,
+        }]);
+      } else {
+        throw new Error(data.error || 'Unknown error');
       }
+    } catch (err) {
+      setMessages(prev => [...prev, {
+        id: String(Date.now()),
+        role: 'assistant',
+        content: 'エラーが発生しました。もう一度お試しください。',
+      }]);
+    } finally {
+      setLoading(false);
     }
   };
 
   return (
-    <div className="flex flex-col h-full bg-white rounded-lg shadow-lg p-4">
-      <div className="flex-grow overflow-y-auto mb-4 space-y-2">
-        {messages.map((message) => (
-          <div
-            key={message.id}
-            className={`flex ${
-              message.role === 'user' ? 'justify-end' : 'justify-start'
-            }`}
-          >
-            <div
-              className={`max-w-xs px-4 py-2 rounded-lg ${
-                message.role === 'user'
-                  ? 'bg-blue-500 text-white'
-                  : 'bg-gray-200 text-gray-800'
-              }`}
-            >
-              {message.content}
+    <div className="flex flex-col h-full bg-white rounded-lg shadow-lg">
+      <div className="flex-grow overflow-y-auto p-4 space-y-3">
+        {messages.map(msg => (
+          <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+            <div className={`max-w-[80%] px-4 py-2 rounded-2xl whitespace-pre-wrap ${
+              msg.role === 'user'
+                ? 'bg-indigo-600 text-white'
+                : 'bg-gray-100 text-gray-800'
+            }`}>
+              {msg.content}
             </div>
           </div>
         ))}
-        <div ref={messagesEndRef} />
+        {loading && (
+          <div className="flex justify-start">
+            <div className="bg-gray-100 text-gray-500 px-4 py-2 rounded-2xl animate-pulse">考え中...</div>
+          </div>
+        )}
+        <div ref={endRef} />
       </div>
-      <div className="flex">
+      <div className="border-t p-3 flex gap-2">
         <input
           type="text"
-          className="flex-grow border rounded-lg p-2 mr-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="flex-grow border rounded-full px-4 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500"
           placeholder="メッセージを入力..."
-          value={inputMessage}
-          onChange={(e) => setInputMessage(e.target.value)}
-          onKeyPress={(e) => {
-            if (e.key === 'Enter') {
-              handleSendMessage();
-            }
-          }}
+          value={input}
+          onChange={e => setInput(e.target.value)}
+          onKeyDown={e => e.key === 'Enter' && send()}
+          disabled={loading}
         />
         <button
-          className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-          onClick={handleSendMessage}
+          className="bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2 px-5 rounded-full disabled:opacity-50 transition-colors"
+          onClick={send}
+          disabled={loading || !input.trim()}
         >
           送信
         </button>

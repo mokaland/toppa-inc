@@ -1,150 +1,121 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 
-const CsvUpload: React.FC = () => {
+const API_URL = 'https://us-central1-gen-lang-client-0841897546.cloudfunctions.net/toppa_app_api';
+
+const CsvUpload = () => {
   const [file, setFile] = useState<File | null>(null);
-  const [instructions, setInstructions] = useState<string>('');
-  const [preview, setPreview] = useState<string>('');
-  const [error, setError] = useState<string>('');
-  const [isDragOver, setIsDragOver] = useState<boolean>(false);
+  const [csvData, setCsvData] = useState('');
+  const [preview, setPreview] = useState('');
+  const [instructions, setInstructions] = useState('');
+  const [report, setReport] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
 
-  const MAX_FILE_SIZE_MB = 5;
-  const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
-
-  const handleFile = (selectedFile: File) => {
-    setError(''); // Clear previous errors
-
-    if (selectedFile.type !== 'text/csv') {
-      setError('対応しているファイル形式はCSVのみです'); // Supported file format is CSV only
-      setFile(null);
-      setPreview('');
+  const handleFile = (f: File) => {
+    if (f.type !== 'text/csv' && !f.name.endsWith('.csv')) {
+      setError('CSVファイルのみ対応しています');
       return;
     }
-
-    if (selectedFile.size > MAX_FILE_SIZE_BYTES) {
-      setError(`ファイルサイズは${MAX_FILE_SIZE_MB}MB以下にしてください`); // File size should be 5MB or less
-      setFile(null);
-      setPreview('');
+    if (f.size > 5 * 1024 * 1024) {
+      setError('5MB以下のファイルを選択してください');
       return;
     }
+    setError('');
+    setFile(f);
+    setReport('');
 
-    setFile(selectedFile);
-    readCsvPreview(selectedFile);
-  };
-
-  const readCsvPreview = (csvFile: File) => {
     const reader = new FileReader();
-    reader.onload = (e) => {
+    reader.onload = e => {
       const text = e.target?.result as string;
-      const lines = text.split('\n').slice(0, 5).join('\n');
-      setPreview(lines);
+      setCsvData(text);
+      setPreview(text.split('\n').slice(0, 5).join('\n'));
     };
-    reader.onerror = () => {
-      setError('ファイルの読み込み中にエラーが発生しました。'); // Error occurred while reading the file
-      setPreview('');
-    };
-    reader.readAsText(csvFile);
+    reader.readAsText(f);
   };
 
-  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    setIsDragOver(true);
-  };
+  const generate = async () => {
+    if (!csvData || !instructions.trim()) return;
+    setLoading(true);
+    setError('');
+    setReport('');
 
-  const handleDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    setIsDragOver(false);
-  };
-
-  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    setIsDragOver(false);
-    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      handleFile(e.dataTransfer.files[0]);
-      e.dataTransfer.clearData();
+    try {
+      const res = await fetch(API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'report', csv_data: csvData, instructions }),
+      });
+      const data = await res.json();
+      if (data.report) {
+        setReport(data.report);
+      } else {
+        throw new Error(data.error || 'レポート生成に失敗しました');
+      }
+    } catch (err: any) {
+      setError(err.message || 'エラーが発生しました');
+    } finally {
+      setLoading(false);
     }
-  };
-
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0) {
-      handleFile(e.target.files[0]);
-    }
-  };
-
-  const handleInstructionsChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    setInstructions(e.target.value);
-  };
-
-  const handleGenerateReport = () => {
-    if (!file) {
-      setError('CSVファイルをアップロードしてください。'); // Please upload a CSV file
-      return;
-    }
-    // Placeholder for API call
-    console.log('Generating report with file:', file.name, 'and instructions:', instructions);
-    // In a real application, you would send 'file' and 'instructions' to your backend API.
   };
 
   return (
-    <div className="p-4 space-y-4">
-      <h2 className="text-2xl font-bold">AIレポート生成</h2>
+    <div className="space-y-6">
+      <h2 className="text-2xl font-bold text-gray-800">AIレポート生成</h2>
+      <p className="text-gray-600">CSVファイルをアップロードし、分析指示を入力すると、AIが自動でレポートを作成します。</p>
 
-      {/* File Upload Area */}
+      {/* ファイルアップロード */}
       <div
-        className={`border-2 border-dashed rounded-lg p-6 text-center transition-colors
-          ${isDragOver ? 'border-blue-500 bg-blue-50' : 'border-gray-300 bg-gray-50'}
-          ${error ? 'border-red-500 bg-red-50' : ''}`
-        }
-        onDragOver={handleDragOver}
-        onDragLeave={handleDragLeave}
-        onDrop={handleDrop}
+        className={`border-2 border-dashed rounded-xl p-8 text-center transition-colors cursor-pointer
+          ${error ? 'border-red-400 bg-red-50' : 'border-gray-300 bg-gray-50 hover:border-indigo-400 hover:bg-indigo-50'}`}
+        onDragOver={e => e.preventDefault()}
+        onDrop={e => { e.preventDefault(); e.dataTransfer.files[0] && handleFile(e.dataTransfer.files[0]); }}
+        onClick={() => document.getElementById('csv-input')?.click()}
       >
-        <input
-          type="file"
-          id="csv-upload"
-          accept=".csv"
-          className="hidden"
-          onChange={handleFileChange}
-        />
-        <label htmlFor="csv-upload" className="cursor-pointer text-blue-600 hover:text-blue-800">
-          {file ? `ファイルが選択されました: ${file.name}` : 'CSVファイルをドラッグ＆ドロップまたはクリックして選択'}
-        </label>
-        {error && <p className="text-red-500 mt-2">{error}</p>}
+        <input id="csv-input" type="file" accept=".csv" className="hidden" onChange={e => e.target.files?.[0] && handleFile(e.target.files[0])} />
+        {file ? (
+          <p className="text-indigo-600 font-medium">{file.name} ({(file.size / 1024).toFixed(1)} KB)</p>
+        ) : (
+          <p className="text-gray-500">CSVファイルをドラッグ&ドロップ、またはクリックして選択</p>
+        )}
+        {error && <p className="text-red-500 mt-2 text-sm">{error}</p>}
       </div>
 
-      {/* CSV Preview */}
+      {/* プレビュー */}
       {preview && (
-        <div className="bg-gray-100 p-4 rounded-lg font-mono text-sm whitespace-pre-wrap">
-          <h3 className="text-lg font-semibold mb-2">ファイルプレビュー (先頭5行):</h3>
+        <div className="bg-gray-900 text-green-400 p-4 rounded-lg font-mono text-xs overflow-x-auto">
+          <p className="text-gray-400 mb-2">プレビュー（先頭5行）:</p>
           <pre>{preview}</pre>
         </div>
       )}
 
-      {/* Instructions Text Area */}
+      {/* 分析指示 */}
       <div>
-        <label htmlFor="instructions" className="block text-sm font-medium text-gray-700 mb-1">
-          指示を入力してください:
-        </label>
+        <label className="block text-sm font-medium text-gray-700 mb-1">分析指示</label>
         <textarea
-          id="instructions"
-          rows={4}
-          className="shadow-sm focus:ring-blue-500 focus:border-blue-500 block w-full sm:text-sm border-gray-300 rounded-md p-2"
-          placeholder="例: 先月の売上を部門別にグラフ化して"
+          rows={3}
+          className="w-full border rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          placeholder="例: 先月の売上を部門別に集計して、傾向と改善提案をまとめてください"
           value={instructions}
-          onChange={handleInstructionsChange}
-        ></textarea>
+          onChange={e => setInstructions(e.target.value)}
+        />
       </div>
 
-      {/* Generate Button */}
-      <div>
-        <button
-          type="button"
-          onClick={handleGenerateReport}
-          disabled={!file || instructions.trim() === ''}
-          className="inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          レポート生成
-        </button>
-      </div>
+      {/* 生成ボタン */}
+      <button
+        onClick={generate}
+        disabled={!csvData || !instructions.trim() || loading}
+        className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-3 px-6 rounded-lg disabled:opacity-50 transition-colors"
+      >
+        {loading ? 'AIが分析中...' : 'レポートを生成'}
+      </button>
+
+      {/* レポート結果 */}
+      {report && (
+        <div className="bg-white border rounded-xl p-6 shadow-sm">
+          <h3 className="text-lg font-bold text-gray-800 mb-3">分析レポート</h3>
+          <div className="prose max-w-none text-gray-700 whitespace-pre-wrap">{report}</div>
+        </div>
+      )}
     </div>
   );
 };
