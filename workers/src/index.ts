@@ -1,47 +1,62 @@
 import { Hono } from 'hono';
-import { cors } from 'hono/cors';
-import { handleGenerateReport } from './handlers/reportHandler';
-import { authMiddleware } from './middleware/auth';
+import { createReportPrompt } from './services/reportService';
 
-// 環境変数の型定義
-export type Bindings = {
-  SUPABASE_URL: string;
-  SUPABASE_ANON_KEY: string;
-  AI_API_KEY: string;
-};
+// Cloudflare Workers の型定義
+// 環境変数は wrangler.toml またはダッシュボードで設定する
+type Bindings = {
+  // 例:
+  // AI: Ai;
+  // DB: D1Database;
+}
 
-const app = new Hono<{ Bindings: Bindings }>().basePath('/api');
-
-// すべてのルートにCORSミドルウェアを適用
-app.use('*', cors({
-  origin: '*', // TODO: 本番環境では特定のドメインに制限する
-  allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowHeaders: ['Content-Type', 'Authorization'],
-}));
-
-// --- Public Routes ---
-// ヘルスチェック用エンドポイント
-app.get('/', (c) => c.text('TOPPA Inc. API is running!'));
-// TODO: サインアップ、ログインのエンドポイントをここに配置する
-
-// --- Protected Routes ---
-const protectedRoutes = new Hono<{ Bindings: Bindings }>();
-protectedRoutes.use('*', authMiddleware());
-
-// 認証済みユーザー情報を返すエンドポイント
-protectedRoutes.get('/me', (c) => {
-  const user = c.get('user');
-  return c.json({ user });
-});
+const app = new Hono<{ Bindings: Bindings }>();
 
 /**
- * AIレポート生成エンドポイント (CSVファイルアップロード対応)
- * multipart/form-data でファイルとプロンプトを受け取る
+ * AIレポート生成APIエンドポイント
+ * POST /api/reports/generate
+ *
+ * リクエストボディ:
+ * {
+ *   "csvData": "CSV形式の文字列",
+ *   "userInstruction": "ユーザーからの指示"
+ * }
+ *
+ * レスポンス:
+ * {
+ *   "report": "AIによって生成されたMarkdown形式のレポート"
+ * }
  */
-protectedRoutes.post('/report', handleGenerateReport);
+app.post('/api/reports/generate', async (c) => {
+  try {
+    const { csvData, userInstruction } = await c.req.json<{ csvData: string; userInstruction: string }>();
 
-// ルーターに保護されたルートを登録
-app.route('/', protectedRoutes);
+    if (!csvData || !userInstruction) {
+      return c.json({ error: '`csvData`と`userInstruction`は必須です' }, 400);
+    }
 
+    // reportService を使ってAIへのプロンプトを生成
+    const prompt = createReportPrompt(csvData, userInstruction);
+
+    // TODO: ここでAIプロバイダー (OpenAI, Anthropic, Cloudflare AI Gateway等) にリクエストを送信する
+    //       c.env.AI などを利用する
+    const mockAiResponse = `## AIによる分析レポート（モック）
+
+ユーザーの指示「${userInstruction}」に基づき、分析を行いました。
+
+**これはモック応答です。実際のAI連携は未実装です。**
+
+生成されたプロンプト（デバッグ用）:
+\`\`\`
+${prompt}
+\`\`\`
+`;
+
+    return c.json({ report: mockAiResponse });
+  } catch (error) {
+    // ログ記録（実際の環境ではより詳細なロギングサービスを利用する）
+    console.error('レポート生成処理でエラーが発生しました:', error);
+    return c.json({ error: 'サーバー内部でエラーが発生しました。' }, 500);
+  }
+});
 
 export default app;
