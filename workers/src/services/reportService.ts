@@ -1,69 +1,85 @@
-import { supabase } from '../lib/supabaseClient';
-import { callAiGateway } from './aiGateway'; // 将来的に実装するAI Gatewayサービス
-import Papa from 'papaparse';
+import { OpenAI } from 'openai';
+
+// HonoのContextから環境変数を取得するための型定義
+// wrangler.tomlで設定されたSecretsとVariablesにアクセスできる
+type Env = {
+  Bindings: {
+    OPENAI_API_KEY: string;
+  };
+};
 
 /**
- * レポート生成に関するビジネスロックを扱うサービスクラス
+ * AIにレポート生成を依頼するコアロジック
+ * @param jsonData - フロントエンドでパース済みのデータ（JSON文字列）
+ * @param userPrompt - ユーザーからの指示
+ * @param c - HonoのContextオブジェクト。環境変数へのアクセスに利用
+ * @returns 生成されたレポート（Markdown形式）
  */
-export class ReportService {
-  // ... (既存のクラス実装は省略) ...
-  private supabaseClient;
-  private aiGateway;
-
-  constructor(supabaseClient: typeof supabase, aiGateway: typeof callAiGateway) {
-    this.supabaseClient = supabaseClient;
-    this.aiGateway = aiGateway;
+export async function generateReport(
+  jsonData: string,
+  userPrompt: string,
+  apiKey: string,
+): Promise<string> {
+  if (!jsonData || jsonData.trim() === '[]' || jsonData.trim() === '{}') {
+    throw new Error('データが空です。');
+  }
+  if (!userPrompt) {
+    throw new Error('ユーザーの指示がありません。');
+  }
+  if (!apiKey) {
+    throw new Error('APIキーが提供されていません。');
   }
 
-  public async createReport(file: File, prompt: string, userId: string) {
-    if (!file || !prompt || !userId) {
-      throw new Error('File, prompt, and userId are required.');
-    }
+  const systemPrompt = `あなたは中小企業の経営者を支援する優秀な経営コンサルタントです。
+提供されたJSONデータを分析し、経営者の意思決定に役立つレポートを作成してください。
+レポートは必ずMarkdown形式で、以下の構成を守ってください。
 
-    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-    const filePath = `${userId}/source/${timestamp}-${file.name}`;
-    
-    const { data: uploadData, error: uploadError } = await this.supabaseClient.storage
-      .from('documents')
-      .upload(filePath, file);
+1.  **総括**: 分析結果の要点
+2.  **インサイト**: データから読み取れる具体的な洞察や傾向
+3.  **アクションプラン**: 次に取るべき具体的な行動提案
 
-    if (uploadError) {
-      console.error('Error uploading file:', uploadError);
-      throw new Error('Failed to upload file to storage.');
-    }
-    const storagePath = uploadData.path;
-    const csvData = await file.text();
-    // ...
-  }
-}
+専門用語を避け、平易な言葉で記述してください。`;
 
+  const userMessage = `以下のデータと指示に基づいてレポートを作成してください。
 
-/**
- * CSV文字列をJSON文字列に変換する。
- * ヘッダー行をキーとして使用する。
- * @param csvData CSV形式の文字列
- * @returns JSON形式の文字列
- * @throws Error CSVの解析に失敗した場合
- */
-export function csvToJson(csvData: string): string {
-  if (!csvData || typeof csvData !== 'string' || csvData.trim() === '') {
-    return JSON.stringify([]);
-  }
+### データ (JSON)
+\`\`\`json
+${jsonData}
+\`\`\`
 
-  const results = Papa.parse(csvData, {
-    header: true,
-    dynamicTyping: true,
-    skipEmptyLines: true,
+### 指示
+${userPrompt}
+`;
+
+  // OpenAIクライアントの初期化
+  const openai = new OpenAI({
+    apiKey: apiKey,
   });
 
-  if (results.errors.length > 0) {
-    // 致命的なエラーのみをスローする
-    const criticalError = results.errors.find(e => e.type === 'FieldMismatch');
-    if (criticalError) {
-       console.error('CSV Parsing Critical Error:', criticalError);
-       throw new Error(`CSVの解析に失敗しました: ${criticalError.message}`);
-    }
-  }
+  try {
+    const response = await openai.chat.completions.create({
+      model: 'gpt-4o',
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userMessage },
+      ],
+      temperature: 0.3,
+      max_tokens: 2000,
+    });
 
-  return JSON.stringify(results.data);
+    const report = response.choices[0]?.message?.content;
+
+    if (!report) {
+      throw new Error('AIからのレスポンスにレポート内容が含まれていませんでした。');
+    }
+
+    return report;
+  } catch (error) {
+    console.error('OpenAI API request failed:', error);
+    // エラー情報をより詳細にラップして再スロー
+    if (error instanceof Error) {
+        throw new Error(`AI APIリクエストに失敗しました: ${error.message}`);
+    }
+    throw new Error('AI APIリクエスト中に不明なエラーが発生しました。');
+  }
 }
