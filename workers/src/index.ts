@@ -1,7 +1,8 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
-import { generateReport } from './report';
+import { handleGenerateReport } from './handlers/reportHandler';
 
+// 環境変数の型定義
 type Bindings = {
   SUPABASE_URL: string;
   SUPABASE_ANON_KEY: string;
@@ -10,38 +11,28 @@ type Bindings = {
 
 const app = new Hono<{ Bindings: Bindings }>().basePath('/api');
 
-// CORSミドルウェア
-app.use('*', cors());
+// すべてのルートにCORSミドルウェアを適用
+app.use('*', cors({
+  origin: '*', // TODO: 本番環境では特定のドメインに制限する
+  allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowHeaders: ['Content-Type', 'Authorization'],
+}));
 
+// ヘルスチェック用エンドポイント
+app.get('/', (c) => c.text('TOPPA Inc. API is running!'));
 
+// モックのユーザー情報エンドポイント
 app.get('/auth/user', async (c) => {
   // TODO: Supabaseクライアントを初期化して実際のユーザー情報を取得する
-  // 現在はモックを返却
   return c.json({ user: { id: 'mock-user-id', email: 'test@example.com' }});
 });
 
 
 /**
- * AIレポート生成エンドポイント
- * リクエストボディ: { jsonData: string, userPrompt: string }
+ * AIレポート生成エンドポイント (CSVファイルアップロード対応)
+ * multipart/form-data でファイルとプロンプトを受け取る
  */
-app.post('/report', async (c) => {
-  try {
-    const { jsonData, userPrompt } = await c.req.json();
-    
-    if (typeof jsonData !== 'string' || typeof userPrompt !== 'string') {
-        return c.jon({ error: 'jsonDataとuserPromptは文字列である必要があります。' }, 400);
-    }
+app.post('/report', handleGenerateReport);
 
-    const aiApiKey = c.env.AI_API_KEY;
-
-    const report = await generateReport(jsonData, userPrompt, aiApiKey);
-
-    return c.json({ report });
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : '不明なエラーが発生しました。';
-    return c.json({ error: `レポート生成に失敗しました: ${errorMessage}` }, 500);
-  }
-});
 
 export default app;
