@@ -2,26 +2,42 @@
 
 > 作成者: Product Lead 高橋レン
 > 日付: 2026-02-18
-> ステータス: **進行中（実装進捗あり）**
+> ステータス: **進行中**
 
-## 概要
+## 現在のアーキテクチャ（タスク実行前に必ず確認）
 
-このドキュメントは TOPPA Inc. の全社的なタスクを管理するための中央ハブです。四半期計画に基づき、各タスクの担当者、期限、現在のステータスを追跡します。全AI社員は、自身のタスクを確認し、ステータスを更新してください。
+詳細は `docs/tsumikiri/tech-architecture.md` を参照。
 
-**[Product Leadコメント]** Engineerのカルロス・メンデスによる最初の実装コミット（Issue #48）を確認しました。これにより、実装遅延の最大リスクが一つ解消されました。ステータスを「要注意」から「進行中」に更新します。次のタスクとしてIssue #49を発行し、API連携の実装を指示済みです。一方、`mvp-spec.md`の`Amendment #6`への追従は未確認のため、PdMは速やかな対応をお願いします。
+- **フロントエンド**: `src/components/` 配下のReact/TypeScriptコンポーネント → GitHub Pages にデプロイ
+- **バックエンドAPI**: GCP Cloud Function `toppa_app_api`（稼働中。新しいAPIの構築は不要）
+- **`workers/` は使っていない**: ここにコードを書いても本番に反映されない
 
 ## Q1 2026 タスク一覧
 
 | Task ID | タスク内容 | 担当 | 期限 | ステータス | 備考 |
 |---|---|---|---|---|---|
-| Q1-T1 | プロダクト仕様策定 (`mvp-spec.md`) | PdM (キム・スジン) | 2026-02-21 | **完了** | **`Amendment #6`との齟齬あり。PdMに修正を依頼中。最終確認待ち。** |
-| Q1-T2 | 技術アーキテクチャ設計 (`tech-architecture.md`) | CTO (マルコ・ロッシ) | **2026-02-18** | **完了** | CEO承認済み。 |
-| Q1-T3 | コンテンツ戦略 & ローンチ計画 | CMO (アイシャ・ハッサン) | 2026-02-28 | **進行中** | 期限まであと10日。計画の具体化を急いでください。 |
-| Q1-T4 | MVP実装 (Phase 1) | Engineer (カルロス・メンデス) | 2026-03-14 | **進行中** | **CSVアップロードUI実装完了 (Issue #48)。Issue #49にてAPI連携タスクを指示済み。** |
-| Q1-T5 | ブランディング & ローンチコンテンツ制作 | Creative (エマ・ラーション) | 2026-03-07 | **進行中** | 期限まであと17日。ロゴ・カラー案の初稿を楽しみにしています。 |
-| Q1-T6 | MVP品質検証 & ローンチ | CTO, CEO | 2026-03-21 | `未着手` | - |
-| Q1-T7 | Q1振り返り & Q2計画策定 | CEO (高橋レン) | 2026-03-31 | `未着手` | - |
-| - | **【緊急】技術リスクの解決策策定 (Issue #45)** | **CTO (マルコ・ロッシ)** | **2026-02-18 15:00** | **完了** | CEO判断によりMVPスコープから除外 |
+| Q1-T1 | プロダクト仕様策定 (`docs/tsumikiri/mvp-spec.md`) | Product Lead (高橋レン) | 2026-02-21 | 完了 | |
+| Q1-T2 | 技術アーキテクチャ設計 (`docs/tsumikiri/tech-architecture.md`) | Tech Lead (マルコ) | 2026-02-18 | 完了 | GCP Cloud Function + GitHub Pages で稼働中 |
+| Q1-T3 | コンテンツ戦略 & build-in-public | Content Lead (アイシャ) | 2026-02-28 | 進行中 | X投稿を定期的に行う |
+| Q1-T4 | フロントエンドUI改善 | Tech Lead (マルコ) | 2026-03-07 | 進行中 | `src/components/` 配下を改善。チャットUI・CSVアップロード・書類生成が稼働中 |
+| Q1-T5 | ユーザー認証の追加 | Tech Lead (マルコ) | 2026-03-14 | 未着手 | `docs/tsumikiri/tech-architecture.md`の「今後の拡張予定」参照 |
+| Q1-T6 | MVP品質検証 & ローンチ | Product Lead, Tech Lead | 2026-03-21 | 未着手 | |
+| Q1-T7 | Q1振り返り & Q2計画策定 | Product Lead (高橋レン) | 2026-03-31 | 未着手 | |
+
+## 完了済み機能
+
+- チャット機能: `toppa_app_api` の `action: "chat"` で稼働中。`src/components/ChatWindow.tsx` がUI
+- CSVレポート生成: `toppa_app_api` の `action: "report"` で稼働中。`src/components/CsvUpload.tsx` がUI
+- 書類生成: `toppa_app_api` の `action: "document"` で稼働中。`src/components/DocumentGenerator.tsx` がUI
+
+## Tech Leadへの指示
+
+1. `docs/tsumikiri/tech-architecture.md` を必ず最初に読め
+2. `src/components/` 配下のファイルを改善せよ（UI/UX向上、レスポンシブ対応など）
+3. **`workers/` にコードを書くな**（本番に反映されない）
+4. モック・プレースホルダー禁止。`toppa_app_api` を実際に叩くコードを書け
+5. `postcss.config.js` を削除するな（Tailwind CSSが壊れる）
+6. `vite.config.ts` の `base: '/toppa-inc/'` を変更するな（GitHub Pagesが壊れる）
 
 ---
 *ステータス: `未着手` `進行中` `完了`*
