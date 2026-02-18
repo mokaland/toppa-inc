@@ -1,5 +1,5 @@
 import type { Context } from 'hono';
-import { generateReport } from '../services/aiService';
+import { reportService } from '../services/reportService';
 
 /**
  * AIレポート生成APIのハンドラ
@@ -12,6 +12,10 @@ export const handleGenerateReport = async (c: Context) => {
     const formData = await c.req.formData();
     const file = formData.get('file') as File;
     const prompt = formData.get('prompt') as string;
+    
+    // TODO: 認証ミドルウェアからユーザーIDを取得する
+    // const userId = c.get('userId'); 
+    const userId = 'd5e1a4f7-c923-4a2c-9a7c-0d1d1a3f7b3a'; // 仮のハードコードされたUUID
 
     // --- バリデーション ---
     if (!file || !(file instanceof File) || file.size === 0) {
@@ -23,29 +27,23 @@ export const handleGenerateReport = async (c: Context) => {
     if (file.type !== 'text/csv') {
       return c.json({ error: '無効なファイルタイプです。CSVファイルのみ対応しています。' }, 400);
     }
-    if (file.size > 5 * 1024 * 1024) {
+    if (file.size > 5 * 1024 * 1024) { // 5MB
         return c.json({ error: 'ファイルサイズは5MB以下にしてください。' }, 400);
     }
 
-    // --- データ処理 ---
-    const csvData = await file.text();
+    // --- サービス呼び出し ---
+    const { reportContent, storagePath } = await reportService.createReport(file, prompt, userId);
 
-    const generatedPrompt = `
-以下のCSVデータを分析し、次の指示に従ってレポートを作成してください。
+    return c.json({ 
+      message: 'レポートが正常に生成されました。',
+      report: reportContent,
+      source_file_path: storagePath 
+    });
 
-[指示]
-${prompt}
-
-[CSVデータ (先頭4000文字)]
-${csvData.substring(0, 4000)}
-`; 
-    
-    // AIサービスを呼び出してレポートを生成
-    const report = await generateReport(generatedPrompt);
-
-    return c.json({ report });
   } catch (error) {
-    console.error('レポート生成中にエラー:', error);
-    return c.json({ error: 'サーバー内部でエラーが発生しました。' }, 500);
+    console.error('レポート生成ハンドラでエラー:', error);
+    // エラーのインスタンスに応じて、より具体的なエラーメッセージを返すことも可能
+    const errorMessage = error instanceof Error ? error.message : 'サーバー内部でエラーが発生しました。';
+    return c.json({ error: errorMessage }, 500);
   }
 };
