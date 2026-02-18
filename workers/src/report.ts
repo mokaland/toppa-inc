@@ -16,6 +16,9 @@ export async function generateReport(
   if (!userPrompt) {
     throw new Error('ユーザーの指示がありません。');
   }
+  if (!aiApiKey || typeof aiApiKey !== 'string' || !aiApiKey.startsWith('sk-')) {
+    throw new Error('無効なAPIキーです。');
+  }
 
   const systemPrompt = `あなたは中小企業の経営者を支援する優秀な経営コンサルタントです。
 提供されたJSONデータを分析し、経営者の意思決定に役立つレポートを作成してください。
@@ -38,15 +41,12 @@ ${jsonData}
 ${userPrompt}
 `;
 
-  // TODO: 実際のAIプロバイダーのAPIを呼び出す
-  // Founding Engineerのカルロスがこの部分を実装する
-  // 以下はfetchを使った呼び出しのサンプルコード
-  /*
+  // OpenAI APIを呼び出す
   const response = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': \`Bearer \${aiApiKey}\`,
+      'Authorization': `Bearer ${aiApiKey}`,
     },
     body: JSON.stringify({
       model: 'gpt-4o',
@@ -55,36 +55,21 @@ ${userPrompt}
         { role: 'user', content: userMessage },
       ],
       temperature: 0.3,
-      max_tokens: 1500,
+      max_tokens: 2000,
     }),
   });
 
   if (!response.ok) {
     const errorBody = await response.text();
-    throw new Error(\`AI APIエラー: \${response.status} \${errorBody}\`);
+    console.error('OpenAI API Error:', errorBody);
+    throw new Error(`AI APIとの連携に失敗しました (HTTP ${response.status})`);
   }
 
   const data = await response.json();
-  const report = data.choices[0].message.content;
   
-  return report;
-  */
+  if (!data.choices || data.choices.length === 0 || !data.choices[0].message?.content) {
+      throw new Error('AIからの応答が予期せぬ形式です。');
+  }
   
-  // 現状はモックレポートを返す
-  const mockReport = `
-# 売上分析レポート (AI生成)
-
-## 1. 総括
-ご指示のあったデータに基づき、売上分析を行いました。
-分析の結果、特定の傾向が確認できました。
-
-## 2. インサイト
-- **部門A:** 売上が安定して好調です。
-- **部門B:** 売上が減少傾向にあります。
-
-## 3. アクションプラン
-- **推奨事項:** 部門Bの製品ラインナップ見直し、または新しいマーケティング戦略の立案を推奨します。
-`;
-
-  return Promise.resolve(mockReport);
+  return data.choices[0].message.content;
 }
