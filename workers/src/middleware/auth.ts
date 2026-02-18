@@ -1,35 +1,44 @@
-import { MiddlewareHandler } from 'hono';
-import { getSupabaseClient } from '../lib/supabase';
 
-// Honoのコンテキストにuserプロパティを追加するための型定義
-declare module 'hono' {
-  interface ContextVariableMap {
-    user: any; // SupabaseのUser型をインポートするのが望ましいが、シンプルにするためanyを使用
+import { createMiddleware } from 'hono/factory';
+import { SupabaseClient } from '@supabase/supabase-js';
+
+// 環境変数の型定義
+type Env = {
+  Variables: {
+    supabase: SupabaseClient;
+    user: any; // SupabaseのUser型をインポートできないためanyで代用
   }
 }
 
 /**
- * ユーザー認証を行うHonoミドルウェア
- * AuthorizationヘッダーのJWTを検証し、成功すればc.set('user', user)でユーザー情報を格納する
+ * ユーザー認証を行い、コンテキストにユーザー情報をセットするミドルウェア
+ *
+ * 事前に supabaseMiddleware が適用されている必要がある。
+ * ヘッダーに 'Authorization: Bearer <SUPABASE_JWT>' が必要。
  */
-export const authMiddleware = (): MiddlewareHandler => {
-  return async (c, next) => {
-    const authHeader = c.req.header('Authorization');
+export const authMiddleware = createMiddleware<Env>(async (c, next) => {
+  const authHeader = c.req.header('Authorization');
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return c.json({ error: 'Unauthorized: Missing or malformed token' }, 401);
+  }
 
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return c.json({ error: 'Authorization header is missing or invalid.' }, 401);
-    }
+  const token = authHeader.split(' ')[1];
+  const supabase = c.get('supabase');
 
-    const token = authHeader.split(' ')[1];
-    const supabase = getSupabaseClient(c);
+  if (!supabase) {
+    // このエラーは通常、supabaseMiddlewareが先に適用されていれば発生しない
+    console.error('Internal Server Error: Supabase client not found in context. Ensure supabaseMiddleware is applied before authMiddleware.');
+    return c.json({ error: 'Internal Server Error: Supabase client not found' }, 500);
+  }
 
-    const { data, error } = await supabase.auth.getUser(token);
+  // Supabaseにトークンを渡し、ユーザー情報を検証する
+  const { data, error } = await supabase.auth.getUser(token);
 
-    if (error || !data.user) {
-      return c.json({ error: 'Invalid token or user not found.', details: error?.message }, 401);
-    }
+  if (error || !data.user) {
+    return c.json({ error: 'Unauthorized: Invalid token' }, 401);
+  }
 
-    c.set('user', data.user);
-    await next();
-  };
-};
+  // 検証成功後、ユーザー情報をコンテキストにセットして次の処理へ
+  c.set('user', data.user);
+  await next();
+});
