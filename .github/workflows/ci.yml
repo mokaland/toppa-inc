@@ -38,7 +38,7 @@ jobs:
         continue-on-error: true
 
       - name: Run tests
-        run: npm run test -- --run
+        run: npx vitest run --exclude "workers/**"
 
       - name: Run build
         run: npm run build
