@@ -1,20 +1,20 @@
 import { Hono } from 'hono';
-import { createReportPrompt } from './services/reportService';
 import { supabaseMiddleware } from './middleware/supabase';
 import { authMiddleware } from './middleware/auth';
+import { csvToJson } from './services/reportService'; // csvToJsonをインポート
+import { generateReport } from './report'; // generateReportをインポート
 
 // Cloudflare Workers の型定義
-// 環境変数は wrangler.toml またはダッシュボードで設定する
 type Bindings = {
   SUPABASE_URL: string;
   SUPABASE_ANON_KEY: string;
-  // AI: Ai;
+  // TODO: AIプロバイダーのAPIキーをBindingsに追加
+  // OPENAI_API_KEY: string;
 }
 
 const app = new Hono<{ Bindings: Bindings }>();
 
 // APIルートグループ
-// このグループ内のすべてのルートで、Supabaseクライアントの初期化とユーザー認証が実行される
 const api = app.basePath('/api');
 
 api.use('*', supabaseMiddleware);
@@ -23,44 +23,35 @@ api.use('*', authMiddleware);
 /**
  * [要認証] AIレポート生成APIエンドポイント
  * POST /api/reports/generate
- *
- * リクエストボディ:
- * {
- *   "csvData": "CSV形式の文字列",
- *   "userInstruction": "ユーザーからの指示"
- * }
- *
- * レスポンス:
- * {
- *   "report": "AIによって生成されたMarkdown形式のレポート"
- * }
  */
 api.post('/reports/generate', async (c) => {
   try {
-    // authMiddlewareによって、c.get('user')で認証済みユーザー情報が取得可能
     const user = c.get('user');
     console.log(`Report generation request from user: ${user.id}`);
 
     const { csvData, userInstruction } = await c.req.json<{ csvData: string; userInstruction: string }>();
 
-    if (!csvData || !userInstruction) {
-      return c.json({ error: '`csvData`と`userInstruction`は必須です' }, 400);
+    if (!userInstruction) {
+      return c.json({ error: '`userInstruction`は必須です' }, 400);
     }
+    // csvDataは空でも許容する（手入力データの場合など）が、後続の処理でチェックされる
 
-    const prompt = createReportPrompt(csvData, userInstruction);
+    // 1. CSVをJSONに変換
+    const jsonData = csvToJson(csvData);
 
-    // TODO: AIプロバイダー連携
-    const mockAiResponse = `## AIによる分析レポート（モック）
-ユーザーID: ${user.id}
-指示: 「${userInstruction}」
+    // 2. AIにレポート生成を依頼
+    // TODO: ユーザーのAPIキー(BYOK)またはシステムのAPIキーを渡す
+    const dummyApiKey = 'dummy-api-key-for-now';
+    const report = await generateReport(jsonData, userInstruction, dummyApiKey);
 
-分析結果...
-`;
+    return c.json({ report });
 
-    return c.json({ report: mockAiResponse });
   } catch (error) {
-    console.error('レポート生成処理でエラーが発生しました:', error);
-    return c.json({ error: 'サーバー内部でエラーが発生しました。' }, 500);
+    console.error('Error in /api/reports/generate:', error);
+    // エラーがErrorインスタンスか確認
+    const errorMessage = error instanceof Error ? error.message : '不明なエラーが発生しました。';
+    // ユーザーに返すエラーメッセージを汎用的なものにする
+    return c.json({ error: `レポートの生成に失敗しました: ${errorMessage}` }, 500);
   }
 });
 
