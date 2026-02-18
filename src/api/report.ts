@@ -1,12 +1,21 @@
-import { Hono } from 'hono';
-import { env } from 'hono/adapter';
-import { stream } from 'hono/streaming';
+import { Hono, Context, Next } from 'hono';
 
-const report = new Hono();
+
+interface Env {
+  Variables: {
+    userId: string;
+  };
+  Bindings: { // For Cloudflare Worker environment variables
+    SUPABASE_URL: string;
+    SUPABASE_ANON_KEY: string;
+  };
+}
+
+const report = new Hono<Env>();
 
 // 認証ミドルウェア（仮）
 // 実際にはSupabase AuthのJWTを検証する
-const authMiddleware = async (c, next) => {
+const authMiddleware = async (c: Context<Env>, next: Next) => {
     // 仮のユーザーID
     // TODO: Supabase Authから実際のユーザーIDを取得するロジックを実装
     c.set('userId', 'dummy_user_id_from_auth');
@@ -14,7 +23,7 @@ const authMiddleware = async (c, next) => {
 };
 
 report.post('/upload', authMiddleware, async (c) => {
-    const { SUPABASE_URL, SUPABASE_ANON_KEY } = env<{ SUPABASE_URL: string; SUPABASE_ANON_KEY: string }>(c);
+    const { SUPABASE_URL, SUPABASE_ANON_KEY } = c.env;
     const userId = c.get('userId');
 
     if (!userId) {

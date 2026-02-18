@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build",
+    "build": "vite build",
     "preview": "vite preview",
     "lint": "eslint src --ext ts,tsx",
     "lint:fix": "eslint src --ext ts,tsx --fix",
@@ -28,7 +28,8 @@
     "papaparse": "^5.4.1",
     "xlsx": "^0.18.5",
     "jspdf": "^2.5.2",
-    "date-fns": "^4.1.0"
+    "date-fns": "^4.1.0",
+    "openai": "^4.29.0"
   },
   "devDependencies": {
     "@types/react": "^19.0.0",

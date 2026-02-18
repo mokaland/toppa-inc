@@ -3,6 +3,8 @@ import { env } from 'hono/adapter';
 import { OpenAI } from 'openai';
 import { createClient } from '@supabase/supabase-js';
 
+
+
 type Bindings = {
   SUPABASE_URL: string;
   SUPABASE_ANON_KEY: string;
@@ -23,7 +25,7 @@ app.post('/api/chat', async (c) => {
   }
 
   // Supabaseにユーザーメッセージを保存
-  const { data: userMessage, error: userMessageError } = await supabase
+  const { error: userMessageError } = await supabase
     .from('chat_messages')
     .insert({ user_id, role: 'user', content: message })
     .select()
@@ -59,7 +61,7 @@ app.post('/api/chat', async (c) => {
     const aiResponseContent = chatCompletion.choices[0].message?.content || '応答なし';
 
     // SupabaseにAI応答を保存
-    const { data: aiMessage, error: aiMessageError } = await supabase
+    const { error: aiMessageError } = await supabase
       .from('chat_messages')
       .insert({ user_id, role: 'assistant', content: aiResponseContent })
       .select()

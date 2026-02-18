@@ -1,18 +1,16 @@
 import { Hono } from 'hono';
 import { streamText } from 'hono/streaming';
-// import { SupabaseClient } from '@supabase/supabase-js'; // SupabaseClientは環境変数で初期化されるため、ここではインポートしない
-import { parse as parseCsv } from 'csv-parse/sync';
-// import * as xlsx from 'xlsx'; // Cloudflare Workersでxlsxを使う場合の考慮が必要
+import Papa from 'papaparse';
 
 const report = new Hono();
 
 report.post('/generate', async (c) => {
-  const { userId, fileContent, fileName, prompt } = await c.req.json();
+  const { fileContent, fileName, prompt } = await c.req.json();
 
   // 1. ファイル内容の解析 (仮実装)
   let parsedData: any[] = [];
   if (fileName.endsWith('.csv')) {
-    parsedData = parseCsv(fileContent, { columns: true });
+    parsedData = Papa.parse(fileContent, { header: true }).data; // Use papaparse
   } else if (fileName.endsWith('.xlsx') || fileName.endsWith('.xls')) {
     // xlsxライブラリはCloudflare Workersで直接使うのが難しい場合があるため、一旦ダミー
     // 実際には、サーバーサイドでの処理や、wasm版のxlsxライブラリの検討が必要
@@ -42,4 +40,4 @@ report.post('/generate', async (c) => {
   });
 });
 
-export default report;
+export default report; 

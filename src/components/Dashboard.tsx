@@ -1,5 +1,6 @@
 import React from 'react';
 import { useUserStore } from '../stores/userStore';
+import CsvUpload from './CsvUpload';
 
 const Dashboard: React.FC = () => {
   const { username, isLoggedIn } = useUserStore();
@@ -9,9 +10,10 @@ const Dashboard: React.FC = () => {
   }
 
   return (
-    <div>
-      <h1>Welcome, {username}!</h1>
-      <p>This is your dashboard.</p>
+    <div className="p-4">
+      <h1 className="text-3xl font-bold mb-4">Welcome, {username}!</h1>
+      <p className="text-lg mb-6">This is your dashboard.</p>
+      <CsvUpload />
     </div>
   );
 };

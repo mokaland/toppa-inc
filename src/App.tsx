@@ -2,7 +2,7 @@
 // 日付: 2026-02-17
 // ステータス: 提案
 
-import React from 'react';
+
 import { BrowserRouter, Routes, Route, Link } from 'react-router-dom';
 
 const Home = () => <div><h1>Home Page</h1><Link to="/about">Go to About</Link></div>;

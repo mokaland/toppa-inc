@@ -1,3 +1,5 @@
+/// <reference types="vite/client" />
+
 /**
  * Tsumikiri MVP Type Definitions
  *
