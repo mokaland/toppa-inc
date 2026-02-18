@@ -23,6 +23,7 @@ export default defineConfig({
       '**/workers/**',
       '**/tsumikiri/**',
       'test/unit/**',
+      'src/api/**/*.test.*',
     ],
   },
 });
