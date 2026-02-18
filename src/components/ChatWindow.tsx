@@ -2,101 +2,121 @@ import { useState, useEffect, useRef } from 'react';
 
 const API_URL = 'https://us-central1-gen-lang-client-0841897546.cloudfunctions.net/toppa_app_api';
 
-interface ChatMessage {
-  id: string;
+interface Message {
   role: 'user' | 'assistant';
   content: string;
 }
 
 const ChatWindow = () => {
-  const [messages, setMessages] = useState<ChatMessage[]>([
-    { id: '1', role: 'assistant', content: 'こんにちは！ツミキリです。経営や事務作業のお手伝いをします。何でも聞いてください。' },
+  const [messages, setMessages] = useState<Message[]>([
+    { role: 'assistant', content: 'こんにちは！ツミキリです。経営や事務作業のお手伝いをします。何でも聞いてください。' },
   ]);
   const [input, setInput] = useState('');
-  const [loading, setLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
+
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+    scrollToBottom();
+  }, [messages, isLoading]);
 
-  const handleSend = async () => {
-    if (!input.trim() || loading) return;
+  const handleSendMessage = async () => {
+    if (input.trim() === '' || isLoading) {
+      return;
+    }
 
-    const userMessage: ChatMessage = { id: String(Date.now()), role: 'user', content: input };
-    const updatedMessages = [...messages, userMessage];
-    setMessages(updatedMessages);
+    const newMessages: Message[] = [...messages, { role: 'user', content: input }];
+    setMessages(newMessages);
     setInput('');
-    setLoading(true);
+    setIsLoading(true);
     setError(null);
 
     try {
-      const res = await fetch(API_URL, {
+      const response = await fetch(API_URL, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+        },
         body: JSON.stringify({
           action: 'chat',
-          messages: updatedMessages.map(({ role, content }) => ({ role, content })),
+          messages: newMessages.map(({ role, content }) => ({ role, content })),
         }),
       });
 
-      if (!res.ok) {
-        throw new Error(`API error: ${res.status} ${res.statusText}`);
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ message: 'サーバーから有効なエラーレスポンスがありませんでした。' }));
+        throw new Error(errorData.message || `HTTPエラー: ${response.status}`);
       }
 
-      const data = await res.json();
-
-      if (data.response) {
-        const assistantMessage: ChatMessage = { id: String(Date.now() + 1), role: 'assistant', content: data.response };
-        setMessages(prevMessages => [...prevMessages, assistantMessage]);
-      } else {
-        throw new Error('予期しないレスポンス形式です。');
-      }
-    } catch (e) {
-      console.error(e);
-      setError('メッセージの送信に失敗しました。時間をおいて再度お試しください。');
-      // 失敗したユーザーメッセージをUIから削除
-      setMessages(prevMessages => prevMessages.slice(0, -1));
+      const data = await response.json();
+      setMessages([...newMessages, { role: 'assistant', content: data.response }]);
+    } catch (err: any) {
+      setError(err.message || '不明なエラーが発生しました。');
     } finally {
-      setLoading(false);
+      setIsLoading(false);
     }
   };
 
   return (
-    <div className="flex flex-col h-[calc(100vh-150px)] bg-gray-50">
+    <div className="flex flex-col h-[calc(100vh-200px)] bg-gray-50 rounded-lg shadow-inner">
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        {messages.map((msg) => (
-          <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-            <div className={`max-w-lg px-4 py-2 rounded-lg ${msg.role === 'user' ? 'bg-blue-500 text-white' : 'bg-white border'}`}>
-              <p style={{ whiteSpace: 'pre-wrap' }}>{msg.content}</p>
+        {messages.map((msg, index) => (
+          <div key={index} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+            <div className={`max-w-lg px-4 py-2 rounded-xl break-words ${
+              msg.role === 'user'
+                ? 'bg-blue-500 text-white'
+                : 'bg-gray-200 text-gray-800'
+            }`}>
+              {msg.content.split('\\n').map((line, i) => <p key={i}>{line}</p>)}
             </div>
           </div>
         ))}
-        <div ref={messagesEndRef} />
-      </div>
-      <div className="p-4 border-t bg-white">
-        {error && (
-          <div className="text-red-500 text-sm mb-2 p-2 bg-red-100 border border-red-400 rounded">
-            {error}
+        {isLoading && (
+          <div className="flex justify-start">
+            <div className="max-w-lg px-4 py-2 rounded-xl bg-gray-200 text-gray-800">
+              <div className="flex items-center space-x-2">
+                <div className="w-2 h-2 bg-gray-500 rounded-full animate-pulse" style={{ animationDelay: '0s' }}></div>
+                <div className="w-2 h-2 bg-gray-500 rounded-full animate-pulse" style={{ animationDelay: '0.1s' }}></div>
+                <div className="w-2 h-2 bg-gray-500 rounded-full animate-pulse" style={{ animationDelay: '0.2s' }}></div>
+              </div>
+            </div>
           </div>
         )}
+        {error && (
+           <div className="flex justify-center">
+             <div className="max-w-lg w-full px-4 py-3 rounded-xl bg-red-100 text-red-700">
+               <strong>エラー:</strong> {error}
+             </div>
+           </div>
+        )}
+        <div ref={messagesEndRef} />
+      </div>
+      <div className="p-4 bg-white border-t">
         <div className="flex items-center space-x-2">
-          <input
-            type="text"
+          <textarea
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            onKeyPress={(e) => e.key === 'Enter' && handleSend()}
-            placeholder="メッセージを入力..."
-            className="flex-1 p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-            disabled={loading}
+            onKeyPress={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                handleSendMessage();
+              }
+            }}
+            placeholder="メッセージを入力... (Shift+Enterで改行)"
+            className="flex-1 p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+            rows={1}
+            disabled={isLoading}
           />
           <button
-            onClick={handleSend}
-            className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:bg-blue-300"
-            disabled={loading}
+            onClick={handleSendMessage}
+            className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:bg-blue-300 disabled:cursor-not-allowed self-end"
+            disabled={isLoading}
           >
-            {loading ? '送信中...' : '送信'}
+            送信
           </button>
         </div>
       </div>
