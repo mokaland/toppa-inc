@@ -1,23 +1,62 @@
-// 作成者: CTO マルコ・ロッシ
-// 日付: 2026-02-17
-// ステータス: 提案
+import { useState } from 'react';
+import ChatWindow from './components/ChatWindow';
+import CsvUpload from './components/CsvUpload';
+import DocumentGenerator from './components/DocumentGenerator';
 
-
-import { BrowserRouter, Routes, Route, Link } from 'react-router-dom';
-
-const Home = () => <div><h1>Home Page</h1><Link to="/about">Go to About</Link></div>;
-const About = () => <div><h1>About Page</h1><Link to="/">Go to Home</Link></div>;
-const NotFound = () => <div><h1>404 Not Found</h1></div>;
+type Tab = 'chat' | 'csv' | 'docs';
 
 function App() {
+  const [activeTab, setActiveTab] = useState<Tab>('chat');
+
+  const tabs: { key: Tab; label: string }[] = [
+    { key: 'chat', label: 'AIチャット' },
+    { key: 'csv', label: 'レポート生成' },
+    { key: 'docs', label: '書類作成' },
+  ];
+
   return (
-    <BrowserRouter>
-      <Routes>
-        <Route path="/" element={<Home />} />
-        <Route path="/about" element={<About />} />
-        <Route path="*" element={<NotFound />} />
-      </Routes>
-    </BrowserRouter>
+    <div className="min-h-screen bg-gray-50">
+      {/* ヘッダー */}
+      <header className="bg-indigo-600 text-white">
+        <div className="max-w-5xl mx-auto px-4 py-4 flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight">ツミキリ</h1>
+            <p className="text-indigo-200 text-sm">中小企業の"詰み"をAIで突破する</p>
+          </div>
+          <span className="text-xs bg-indigo-500 px-2 py-1 rounded">MVP開発中</span>
+        </div>
+      </header>
+
+      {/* タブナビゲーション */}
+      <nav className="bg-white border-b">
+        <div className="max-w-5xl mx-auto px-4 flex space-x-1">
+          {tabs.map((tab) => (
+            <button
+              key={tab.key}
+              onClick={() => setActiveTab(tab.key)}
+              className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
+                activeTab === tab.key
+                  ? 'border-indigo-600 text-indigo-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+      </nav>
+
+      {/* メインコンテンツ */}
+      <main className="max-w-5xl mx-auto px-4 py-6">
+        {activeTab === 'chat' && (
+          <div className="h-[calc(100vh-220px)]">
+            <ChatWindow />
+          </div>
+        )}
+        {activeTab === 'csv' && <CsvUpload />}
+        {activeTab === 'docs' && <DocumentGenerator />}
+      </main>
+    </div>
   );
 }
 
