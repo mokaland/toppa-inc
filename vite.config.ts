@@ -3,6 +3,7 @@ import react from '@vitejs/plugin-react';
 
 export default defineConfig({
   root: '.',
+  base: '/toppa-inc/',
   plugins: [react()],
   resolve: {
     alias: {
