@@ -1,48 +1,83 @@
-// workers/src/services/reportService.ts
+import { supabase } from '../lib/supabaseClient';
+import { callAiGateway } from './aiGateway'; // 将来的に実装するAI Gatewayサービス
 
 /**
- * CSVデータのプレビューと統計情報を生成し、AIへのプロンプトを作成します。
- * この関数は、Cloudflare WorkersのEdge環境で実行されることを想定しており、
- * 依存ライブラリなしで動作するように設計されています。
- *
- * @param csvData CSV形式の文字列データ。改行コードは '\n' を想定。
- * @param userInstruction ユーザーからのレポート生成に関する指示。
- * @returns AI (LLM) に送信するための整形済みプロンプト文字列。
+ * レポート生成に関するビジネスロジックを扱うサービスクラス
  */
-export const createReportPrompt = (csvData: string, userInstruction: string): string => {
-  const lines = csvData.trim().split('\n');
-  if (lines.length === 0 || lines[0] === '') {
-    // TODO: エラーハンドリングを強化し、呼び出し元にエラーオブジェクトを返すようにする
-    return "CSVデータが空です。";
+export class ReportService {
+  private supabaseClient;
+  private aiGateway;
+
+  /**
+   * コンストラクタで依存性を注入
+   * @param supabaseClient Supabaseクライアントのインスタンス
+   * @param aiGateway AI Gatewayを呼び出す関数
+   */
+  constructor(supabaseClient: typeof supabase, aiGateway: typeof callAiGateway) {
+    this.supabaseClient = supabaseClient;
+    this.aiGateway = aiGateway;
   }
-  const headers = lines[0].split(',');
-  const rows = lines.length > 1 ? lines.slice(1).map(line => line.split(',')) : [];
 
-  const rowCount = rows.length;
-  const columnCount = headers.length;
+  /**
+   * アップロードされたファイルと指示に基づき、AIレポートを生成する
+   * @param file ユーザーがアップロードしたCSVファイル
+   * @param prompt ユーザーからの指示
+   * @param userId ユーザーID
+   * @returns 生成されたレポート内容とファイルの保存パス
+   */
+  public async createReport(file: File, prompt: string, userId: string) {
+    if (!file || !prompt || !userId) {
+      throw new Error('File, prompt, and userId are required.');
+    }
 
-  // パフォーマンスを考慮し、大規模データの場合はプレビュー行数を制限する
-  const preview = lines.slice(0, 4).join('\n');
+    // 1. ファイルをSupabase Storageにアップロード
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const filePath = `${userId}/source/${timestamp}-${file.name}`;
+    
+    const { data: uploadData, error: uploadError } = await this.supabaseClient.storage
+      .from('documents') // 'reports'から'documents'バケットに変更
+      .upload(filePath, file);
 
-  const prompt = `あなたはプロのデータアナリストです。以下のCSVデータとユーザーからの指示に基づいて、洞察に満ちたレポートをMarkdown形式で生成してください。
+    if (uploadError) {
+      console.error('Error uploading file:', uploadError);
+      throw new Error('Failed to upload file to storage.');
+    }
+    const storagePath = uploadData.path;
 
-## ユーザーの指示
-${userInstruction}
+    // 2. ファイルの内容を読み込む
+    const csvData = await file.text();
 
-## データ概要
-- ファイル形式: CSV
-- データ件数: ${rowCount}件
-- カラム数: ${columnCount}個
-- カラム名: ${headers.join(', ')}
+    // 3. AIに渡すための最終的なプロンプトを構築
+    const finalPrompt = this.buildFinalPrompt(prompt, csvData);
 
-## データプレビュー (先頭3行)
-\`\`\`csv
-${preview}
-\`\`\`
+    // 4. AI Gatewayを呼び出してレポートを生成
+    const reportContent = await this.aiGateway(finalPrompt);
+    
+    // TODO: 生成されたレポートをDBの'documents'テーブルに保存する処理を追加
 
-## 指示
-上記のデータ概要とプレビューを元に、ユーザーの指示に沿った分析レポートを生成してください。レポートは必ずMarkdown形式で出力し、必要に応じてテーブルやリスト、強調表現（太字など）を使用してください。
-`.trim();
+    return { reportContent, storagePath };
+  }
 
-  return prompt;
-};
+  /**
+   * AIに渡す最終的なプロンプトを組み立てる
+   * @param userPrompt ユーザーからの指示
+   * @param csvData CSVデータ
+   * @returns 組み立てられたプロンプト文字列
+   */
+  private buildFinalPrompt(userPrompt: string, csvData: string): string {
+    const truncatedCsv = csvData.length > 4000 ? csvData.substring(0, 4000) : csvData;
+    return \`
+以下のCSVデータを分析し、次の指示に従ってレポートを作成してください。
+レポートは必ずMarkdown形式で、見出し、箇条書き、表などを適切に使用して分かりやすくまとめてください。
+
+[指示]
+${userPrompt}
+
+[CSVデータ (先頭最大4000文字)]
+${truncatedCsv}
+\`;
+  }
+}
+
+// シングルトンインスタンスを作成してエクスポート
+export const reportService = new ReportService(supabase, callAiGateway);
