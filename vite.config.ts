@@ -21,6 +21,8 @@ export default defineConfig({
       '**/node_modules/**',
       '**/dist/**',
       '**/workers/**',
+      '**/tsumikiri/**',
+      'test/unit/**',
     ],
   },
 });
