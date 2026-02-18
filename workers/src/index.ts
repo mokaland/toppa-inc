@@ -1,9 +1,10 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { handleGenerateReport } from './handlers/reportHandler';
+import { authMiddleware } from './middleware/auth';
 
 // 環境変数の型定義
-type Bindings = {
+export type Bindings = {
   SUPABASE_URL: string;
   SUPABASE_ANON_KEY: string;
   AI_API_KEY: string;
@@ -18,21 +19,29 @@ app.use('*', cors({
   allowHeaders: ['Content-Type', 'Authorization'],
 }));
 
+// --- Public Routes ---
 // ヘルスチェック用エンドポイント
 app.get('/', (c) => c.text('TOPPA Inc. API is running!'));
+// TODO: サインアップ、ログインのエンドポイントをここに配置する
 
-// モックのユーザー情報エンドポイント
-app.get('/auth/user', async (c) => {
-  // TODO: Supabaseクライアントを初期化して実際のユーザー情報を取得する
-  return c.json({ user: { id: 'mock-user-id', email: 'test@example.com' }});
+// --- Protected Routes ---
+const protectedRoutes = new Hono<{ Bindings: Bindings }>();
+protectedRoutes.use('*', authMiddleware());
+
+// 認証済みユーザー情報を返すエンドポイント
+protectedRoutes.get('/me', (c) => {
+  const user = c.get('user');
+  return c.json({ user });
 });
-
 
 /**
  * AIレポート生成エンドポイント (CSVファイルアップロード対応)
  * multipart/form-data でファイルとプロンプトを受け取る
  */
-app.post('/report', handleGenerateReport);
+protectedRoutes.post('/report', handleGenerateReport);
+
+// ルーターに保護されたルートを登録
+app.route('/', protectedRoutes);
 
 
 export default app;
