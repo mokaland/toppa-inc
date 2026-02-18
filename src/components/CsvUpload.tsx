@@ -32,193 +32,198 @@ const CsvUpload = () => {
     setFile(null);
     setPreview([]);
     setHeaders([]);
+    setInstructions('');
     setReport('');
     setError('');
   };
 
-  const handleFile = useCallback((selectedFile: File) => {
-    resetState();
-
-    // MIMEタイプに'csv'が含まれず、かつファイル名が'.csv'で終わらない場合にエラー
-    if (!selectedFile.type.includes('csv') && !selectedFile.name.endsWith('.csv')) {
-      setError('CSVファイルのみ対応しています。');
-      return;
-    }
-    if (selectedFile.size > 5 * 1024 * 1024) {
-      setError('ファイルサイズは5MB以下にしてください。');
-      return;
-    }
-    
-    setFile(selectedFile);
-
-    Papa.parse(selectedFile, {
-      header: true,
-      preview: 5,
-      skipEmptyLines: true,
-      complete: (results) => {
-        setHeaders(results.meta.fields || []);
-        setPreview(results.data.map(row => Object.values(row as Record<string, string>)));
-      },
-      error: () => {
-        setError('CSVファイルのパースに失敗しました。');
-        setFile(null);
+  const processFile = (selectedFile: File) => {
+    if (selectedFile) {
+      if (selectedFile.type !== 'text/csv') {
+        setError('対応しているファイル形式はCSVのみです');
+        resetState();
+        return;
       }
-    });
+      if (selectedFile.size > 5 * 1024 * 1024) {
+        setError('ファイルサイズは5MB以下にしてください');
+        resetState();
+        return;
+      }
+      setFile(selectedFile);
+      setError('');
+
+      Papa.parse(selectedFile, {
+        header: true,
+        preview: 5,
+        complete: (results) => {
+          if (results.meta.fields) {
+            setHeaders(results.meta.fields);
+          }
+          // PapaParseのdataはany[]なのでstring[][]に変換する
+          const dataAsStringArray = results.data.map(row => {
+            const rowAsObject = row as {[key: string]: any};
+            return results.meta.fields ? results.meta.fields.map(field => String(rowAsObject[field])) : [];
+          });
+          setPreview(dataAsStringArray);
+        }
+      });
+    }
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      processFile(e.target.files[0]);
+    }
+  };
+
+  const handleDrop = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(false);
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+      processFile(e.dataTransfer.files[0]);
+    }
   }, []);
 
-  const onDragEnter = (e: React.DragEvent<HTMLDivElement>) => {
+  const handleDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     e.stopPropagation();
     setIsDragOver(true);
-  };
+  }, []);
 
-  const onDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
+  const handleDragLeave = useCallback((e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     e.stopPropagation();
     setIsDragOver(false);
-  };
+  }, []);
 
-  const onDragOver = (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    e.stopPropagation();
-  };
-  
-  const onDrop = (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDragOver(false);
-    const droppedFiles = e.dataTransfer.files;
-    if (droppedFiles && droppedFiles.length > 0) {
-      handleFile(droppedFiles[0]);
-    }
-  };
 
-  const onFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0) {
-      handleFile(e.target.files[0]);
-    }
-  };
-
-  const generateReport = async () => {
-    if (!file || !instructions.trim()) {
-        setError('ファイルと指示の両方を入力してください。');
-        return;
+  const handleSubmit = async () => {
+    if (!file || !instructions) {
+      setError('ファイルを選択し、指示を入力してください');
+      return;
     }
     setLoading(true);
-    setError('');
     setReport('');
+    setError('');
 
-    const reader = new FileReader();
-    reader.onload = async (e) => {
-        const csvData = e.target?.result as string;
-        try {
-            const res = await fetch(API_URL, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ action: 'report', csv_data: csvData, instructions }),
-            });
-            if (!res.ok) {
-                const errorData = await res.json().catch(() => ({ error: `APIエラー: ${res.status}` }));
-                throw new Error(errorData.error || `APIエラー: ${res.status}`);
-            }
-            const data = await res.json();
-            if (data.report) {
-              setReport(data.report);
-            } else {
-              setError(data.error || 'レポートの生成に失敗しました。');
-            }
-        } catch (err) {
-            setError(err instanceof Error ? err.message : '不明なエラーが発生しました。');
-        } finally {
-            setLoading(false);
+    try {
+      const reader = new FileReader();
+      reader.onload = async (event) => {
+        const csvData = event.target?.result as string;
+        const response = await fetch(API_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'report',
+            csv_data: csvData,
+            instructions: instructions
+          }),
+        });
+
+        if (!response.ok) {
+          throw new Error('サーバーエラーが発生しました');
         }
-    };
-    reader.readAsText(file);
+
+        const data = await response.json();
+        setReport(data.report);
+      };
+      reader.onerror = () => {
+        throw new Error('ファイルの読み込みに失敗しました');
+      }
+      reader.readAsText(file);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'レポートの生成に失敗しました');
+    } finally {
+      setLoading(false);
+    }
   };
-
+  
   return (
-    <div className="p-4 md:p-8 bg-gray-50 min-h-screen">
-        <div className="max-w-4xl mx-auto">
-            <div className="bg-white p-6 rounded-lg shadow-md">
-                <h2 className="text-2xl font-bold text-gray-800 mb-4">AIレポート生成 (CSV)</h2>
-                
-                {error && <div className="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 mb-4" role="alert"><p>{error}</p></div>}
+    <div className="p-6 bg-gray-50 rounded-lg shadow-md">
+      <h2 className="text-2xl font-bold mb-4 text-gray-800">AIレポート生成 (CSV)</h2>
+      
+      {error && <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mb-4" role="alert">{error}</div>}
 
-                <div 
-                    className={`border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors duration-200 ${isDragOver ? 'border-indigo-500 bg-indigo-50' : 'border-gray-300 hover:border-gray-400'}`}
-                    onDragEnter={onDragEnter}
-                    onDragLeave={onDragLeave}
-                    onDragOver={onDragOver}
-                    onDrop={onDrop}
-                    onClick={() => document.getElementById('file-upload')?.click()}
-                >
-                    <input id="file-upload" type="file" accept=".csv,text/csv" className="hidden" onChange={onFileChange} />
-                    <CsvIcon />
-                    <p className="mt-2 text-gray-600">ここにCSVファイルをドラッグ＆ドロップ</p>
-                    <p className="text-sm text-gray-500">またはクリックしてファイルを選択 (最大5MB)</p>
-                </div>
+      <div 
+        onDrop={handleDrop} 
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        className={`border-2 border-dashed rounded-lg p-8 text-center ${isDragOver ? 'border-indigo-600 bg-indigo-50' : 'border-gray-300'}`}
+      >
+        <input type="file" id="csv-upload" className="hidden" onChange={handleFileChange} accept=".csv" />
+        <label htmlFor="csv-upload" className="cursor-pointer">
+          <CsvIcon />
+          <p className="mt-2 text-gray-600">ここにCSVファイルをドラッグ＆ドロップ</p>
+          <p className="text-sm text-gray-500">またはクリックしてファイルを選択</p>
+          <p className="text-xs text-gray-400 mt-1">最大ファイルサイズ: 5MB</p>
+        </label>
+      </div>
 
-                {file && (
-                    <div className="mt-6">
-                        <h3 className="font-semibold text-gray-700">選択されたファイル: <span className="font-normal">{file.name}</span></h3>
-                        {preview.length > 0 && (
-                            <div className="mt-4">
-                                <h4 className="font-semibold text-gray-700 mb-2">ファイルプレビュー (先頭5行)</h4>
-                                <div className="overflow-x-auto bg-gray-50 p-2 rounded-md">
-                                    <table className="w-full text-sm text-left text-gray-500">
-                                        <thead className="text-xs text-gray-700 uppercase bg-gray-100">
-                                            <tr>
-                                                {headers.map((h, i) => <th key={i} scope="col" className="px-4 py-2">{h}</th>)}
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {preview.map((row, i) => (
-                                                <tr key={i} className="bg-white border-b">
-                                                    {Object.values(row).map((cell, j) => <td key={j} className="px-4 py-2">{cell}</td>)}
-                                                </tr>
-                                            ))}
-                                        </tbody>
-                                    </table>
-                                </div>
-                            </div>
-                        )}
-                    </div>
-                )}
-                
-                <div className="mt-6">
-                    <label htmlFor="instructions" className="block text-sm font-medium text-gray-700 mb-1">指示</label>
-                    <textarea
-                        id="instructions"
-                        rows={4}
-                        className="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
-                        placeholder="例: 部門別の売上を降順で集計し、改善提案を3つ挙げてください。"
-                        value={instructions}
-                        onChange={(e) => setInstructions(e.target.value)}
-                        disabled={loading}
-                    ></textarea>
-                </div>
-
-                <div className="mt-6 text-right">
-                    <button
-                        onClick={generateReport}
-                        disabled={!file || !instructions.trim() || loading}
-                        className="inline-flex items-center justify-center px-6 py-2 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:bg-gray-400 disabled:cursor-not-allowed"
-                    >
-                        {loading && <SpinnerIcon />}
-                        {loading ? '生成中...' : 'レポートを生成'}
-                    </button>
-                </div>
+      {file && (
+        <div className="mt-4 p-4 bg-white rounded shadow">
+          <h3 className="font-bold text-lg mb-2">選択されたファイル: {file.name}</h3>
+          {preview.length > 0 && (
+            <div>
+              <h4 className="font-semibold mb-2">ファイルプレビュー (先頭5行)</h4>
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      {headers.map((header, index) => (
+                        <th key={index} className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{header}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {preview.map((row, rowIndex) => (
+                      <tr key={rowIndex}>
+                        {row.map((cell, cellIndex) => (
+                          <td key={cellIndex} className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{cell}</td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
-
-            {report && (
-                <div className="mt-8 bg-white p-6 rounded-lg shadow-md">
-                    <h3 className="text-xl font-bold text-gray-800 mb-4">生成されたレポート</h3>
-                    <div className="prose max-w-none">
-                        <pre className="bg-gray-100 p-4 rounded-md whitespace-pre-wrap">{report}</pre>
-                    </div>
-                </div>
-            )}
+          )}
         </div>
+      )}
+
+      <div className="mt-4">
+        <label htmlFor="instructions" className="block text-sm font-medium text-gray-700 mb-1">指示:</label>
+        <textarea
+          id="instructions"
+          rows={4}
+          className="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
+          placeholder="例: 部門別の売上を降順で集計し、改善提案をしてください。"
+          value={instructions}
+          onChange={(e) => setInstructions(e.target.value)}
+        />
+      </div>
+
+      <button
+        onClick={handleSubmit}
+        disabled={loading || !file || !instructions}
+        className="mt-4 w-full inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:bg-gray-400 disabled:cursor-not-allowed"
+      >
+        {loading && <SpinnerIcon />}
+        {loading ? 'レポート生成中...' : 'レポートを生成'}
+      </button>
+
+      {report && (
+        <div className="mt-6 p-4 bg-white rounded shadow">
+          <h3 className="font-bold text-lg mb-2">生成されたレポート</h3>
+          <div className="prose max-w-none" dangerouslySetInnerHTML={{ __html: report.replace(/\n/g, '<br />') }}></div>
+          <button 
+            onClick={() => navigator.clipboard.writeText(report)}
+            className="mt-4 py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700"
+          >
+            レポートをコピー
+          </button>
+        </div>
+      )}
     </div>
   );
 };
