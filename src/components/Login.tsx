@@ -2,10 +2,17 @@
 import React, { useState } from 'react';
 
 /**
- * ユーザー認証を行うためのログインフォームコンポーネント。
- * MVP段階ではUIの骨格のみを提供し、実際の認証ロジックは今後のタスクで実装する。
+ * 認証成功時に呼び出されるコールバック関数の型定義。
  */
-const Login = () => {
+interface LoginProps {
+  onLoginSuccess: () => void;
+}
+
+/**
+ * ユーザー認証を行うためのログインフォームコンポーネント。
+ * @param {LoginProps} props - コンポーネントのプロパティ。onLoginSuccessコールバックを含む。
+ */
+const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -24,14 +31,17 @@ const Login = () => {
       return;
     }
     setLoading(true);
-    // TODO: Q1-T5の次のステップで、Supabase等の認証APIを呼び出すロジックを実装する
-    await new Promise(resolve => setTimeout(resolve, 1000)); // 擬似的なネットワーク遅延
     
-    // 現時点ではコンソールにログイン試行を出力するのみ
+    // TODO: Q1-T5の次のステップで、Supabase等の認証APIを呼び出すロジックを実装する
+    await new Promise(resolve => setTimeout(resolve, 1500)); // 擬似的なネットワーク遅延
+    
+    // 現時点ではコンソールにログイン試行を出力し、常に成功したとみなす
     console.log('Login attempt with:', { email, password });
     
-    // 本来はここで認証結果に応じて画面遷移やトークン保存を行う
     setLoading(false);
+    
+    // 親コンポーネントにログイン成功を通知する
+    onLoginSuccess();
   };
 
   return (
