@@ -1,18 +1,12 @@
-
 import React, { useState } from 'react';
-
-/**
- * 認証成功時に呼び出されるコールバック関数の型定義。
- */
-interface LoginProps {
-  onLoginSuccess: () => void;
-}
+import { useAuthStore } from '@/stores/authStore';
 
 /**
  * ユーザー認証を行うためのログインフォームコンポーネント。
- * @param {LoginProps} props - コンポーネントのプロパティ。onLoginSuccessコールバックを含む。
+ * 状態管理はZustandのauthStoreに依存する。
  */
-const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
+const Login: React.FC = () => {
+  const { login } = useAuthStore();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -20,7 +14,7 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
 
   /**
    * ログインフォームの送信をハンドルする。
-   * 入力値のバリデーションを行い、擬似的なAPI呼び出しでローディング状態を管理する。
+   * authStoreのloginアクションを呼び出し、認証処理を実行する。
    * @param {React.FormEvent} e - フォームイベント
    */
   const handleLogin = async (e: React.FormEvent) => {
@@ -31,17 +25,15 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
       return;
     }
     setLoading(true);
-    
-    // TODO: Q1-T5の次のステップで、Supabase等の認証APIを呼び出すロジックを実装する
-    await new Promise(resolve => setTimeout(resolve, 1500)); // 擬似的なネットワーク遅延
-    
-    // 現時点ではコンソールにログイン試行を出力し、常に成功したとみなす
-    console.log('Login attempt with:', { email, password });
-    
-    setLoading(false);
-    
-    // 親コンポーネントにログイン成功を通知する
-    onLoginSuccess();
+    try {
+      await login(email, password);
+      // ログイン成功後の画面遷移はApp.tsxがストアの状態を監視して行う
+    } catch (err) {
+      setError('ログインに失敗しました。メールアドレスとパスワードを確認してください。');
+      console.error('Login failed:', err);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -51,6 +43,11 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
           ツミキリへようこそ
         </h2>
         <form className="space-y-6" onSubmit={handleLogin}>
+          {error && (
+            <div className="px-4 py-3 text-red-700 bg-red-100 border border-red-400 rounded-md" role="alert">
+              <span className="block sm:inline">{error}</span>
+            </div>
+          )}
           <div>
             <label htmlFor="email" className="block text-sm font-medium text-gray-700">
               メールアドレス
@@ -65,7 +62,6 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 className="block w-full px-3 py-2 placeholder-gray-400 border border-gray-300 rounded-md shadow-sm appearance-none focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-                placeholder="you@example.com"
               />
             </div>
           </div>
@@ -88,13 +84,11 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
             </div>
           </div>
 
-          {error && <p className="text-sm text-center text-red-600">{error}</p>}
-
           <div>
             <button
               type="submit"
               disabled={loading}
-              className="flex justify-center w-full px-4 py-2 text-sm font-medium text-white bg-indigo-600 border border-transparent rounded-md shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50"
+              className="flex justify-center w-full px-4 py-2 text-sm font-medium text-white bg-indigo-600 border border-transparent rounded-md shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:bg-indigo-300 disabled:cursor-not-allowed"
             >
               {loading ? 'ログイン中...' : 'ログイン'}
             </button>
