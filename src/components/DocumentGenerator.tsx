@@ -2,9 +2,28 @@ import { useState, useCallback } from 'react';
 
 const API_URL = 'https://us-central1-gen-lang-client-0841897546.cloudfunctions.net/toppa_app_api';
 
+// ローディングスピナーコンポーネント
+const Spinner = () => (
+  <div className="flex justify-center items-center p-4 my-4">
+    <svg className="animate-spin -ml-1 mr-3 h-8 w-8 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+    </svg>
+    <span className="text-lg text-gray-600">書類を生成しています...</span>
+  </div>
+);
+
+// エラーメッセージコンポーネント
+const ErrorMessage = ({ message }: { message: string }) => (
+  <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-md relative my-4" role="alert">
+    <strong className="font-bold">エラー: </strong>
+    <span className="block sm:inline">{message}</span>
+  </div>
+);
+
 /**
  * AI書類生成コンポーネント
- * テンプレートと自然言語の指示に基づき、APIを呼び出して書類を生成します。
+ * UIを洗練させ、ローディング表示をスピナーに変更した改善版。
  */
 const DocumentGenerator = () => {
   const [template, setTemplate] = useState('quotation');
@@ -14,13 +33,11 @@ const DocumentGenerator = () => {
   const [error, setError] = useState<string | null>(null);
 
   const generate = useCallback(async () => {
-    // フロントエンドでのバリデーション
     if (!description.trim()) {
       setError('指示内容を入力してください。');
       return;
     }
 
-    // 状態の初期化
     setLoading(true);
     setError(null);
     setDocument('');
@@ -28,110 +45,79 @@ const DocumentGenerator = () => {
     try {
       const response = await fetch(API_URL, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          action: 'document',
-          template,
-          description,
-        }),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'document', template, description }),
       });
 
-      // HTTPステータスコードが200番台でない場合のエラーハンドリング
       if (!response.ok) {
-        let errorMessage;
-        try {
-          // まずJSONとしてエラーレスポンスの解析を試みる
-          const errorData = await response.json();
-          errorMessage = errorData.error || errorData.message || 'サーバーからエラーが返されましたが、詳細メッセージがありません。';
-        } catch (jsonError) {
-          // JSONの解析に失敗した場合（例: 502 Bad GatewayでHTMLが返るなど）
-          errorMessage = 'サーバーとの通信に失敗しました。レスポンスが不正です。';
-        }
-        // 最終的なエラーメッセージを組み立ててスローする
-        throw new Error(`${errorMessage} (ステータス: ${response.status})`);
+        const errorData = await response.json().catch(() => ({ message: 'サーバーから不明なエラーが返されました。' }));
+        throw new Error(errorData.message || `HTTPエラー: ${response.status}`);
       }
 
       const data = await response.json();
-
-      // 成功レスポンスだが、期待したデータが含まれていない場合
       if (data.document) {
         setDocument(data.document);
       } else {
-        throw new Error('サーバーから予期しない形式の応答がありました。');
+        throw new Error('APIからのレスポンスに書類データが含まれていません。');
       }
-
-    } catch (err) {
-      // ネットワークエラーやスローされたエラーをキャッチ
-      if (err instanceof Error) {
-        setError(`エラー: ${err.message}`);
+    } catch (e: unknown) {
+      if (e instanceof Error) {
+        setError(`生成に失敗しました: ${e.message}`);
       } else {
-        setError('予期せぬエラーが発生しました。時間をおいて再度お試しください。');
+        setError('予期せぬエラーが発生しました。');
       }
     } finally {
-      // 処理が成功・失敗いずれの場合でもローディングを解除
       setLoading(false);
     }
   }, [template, description]);
 
   return (
-    <div className="p-4 md:p-6 bg-white rounded-lg shadow-md space-y-6">
-      <div className="space-y-2">
-        <h2 className="text-2xl font-bold text-gray-800">AI書類生成</h2>
-        <p className="text-gray-600">テンプレートを選択し、作りたい書類の内容を具体的に指示してください。</p>
-      </div>
-
+    <div className="p-4 md:p-6 bg-white rounded-lg shadow-md max-w-2xl mx-auto">
+      <h2 className="text-2xl font-bold mb-4 text-gray-800">書類生成AI</h2>
       <div className="space-y-4">
         <div>
-          <label htmlFor="template" className="block text-sm font-medium text-gray-700 mb-1">テンプレート選択</label>
-          <select
-            id="template"
-            value={template}
+          <label htmlFor="template-select" className="block text-sm font-medium text-gray-700 mb-1">テンプレートを選択</label>
+          <select 
+            id="template-select" 
+            value={template} 
             onChange={(e) => setTemplate(e.target.value)}
-            className="block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-            disabled={loading}
+            className="block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
           >
             <option value="quotation">見積書</option>
             <option value="invoice">請求書</option>
             <option value="freeform">自由形式</option>
           </select>
         </div>
-
         <div>
-          <label htmlFor="description" className="block text-sm font-medium text-gray-700 mb-1">指示内容</label>
-          <textarea
-            id="description"
+          <label htmlFor="description-textarea" className="block text-sm font-medium text-gray-700 mb-1">指示内容</label>
+          <textarea 
+            id="description-textarea"
             rows={5}
-            className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-            placeholder="例: 株式会社ABC宛に、Webサイトリニューアルの件で90万円の見積書を作成。納期は3月31日。"
             value={description}
             onChange={(e) => setDescription(e.target.value)}
-            disabled={loading}
+            placeholder="例: 株式会社ABC宛に、Webサイトリニューアルの件で90万円の見積書を作成。納期は3月31日。"
+            className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
           />
         </div>
-      </div>
-
-      <div className="flex items-center justify-end">
-        <button
-          onClick={generate}
+        <button 
+          onClick={generate} 
           disabled={loading}
-          className="inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:bg-gray-400 disabled:cursor-not-allowed"
+          className="w-full inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:bg-gray-400 disabled:cursor-not-allowed"
         >
           {loading ? '生成中...' : '書類を生成する'}
         </button>
       </div>
 
-      {error && (
-        <div className="p-4 bg-red-100 border border-red-400 text-red-700 rounded-md">
-          <p>{error}</p>
-        </div>
-      )}
+      {error && <ErrorMessage message={error} />}
+      
+      {loading && <Spinner />}
 
-      {document && !loading && (
-        <div className="space-y-4">
-           <h3 className="text-lg font-semibold text-gray-800">生成された書類</h3>
-           <pre className="p-4 bg-gray-50 rounded-md whitespace-pre-wrap text-sm text-gray-800 border">{document}</pre>
+      {document && (
+        <div className="mt-6">
+          <h3 className="text-xl font-bold mb-2 text-gray-800">生成された書類</h3>
+          <pre className="bg-gray-100 p-4 rounded-md whitespace-pre-wrap font-mono text-sm">
+            {document}
+          </pre>
         </div>
       )}
     </div>
