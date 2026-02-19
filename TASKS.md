@@ -23,7 +23,7 @@
 | Q1-T4.1 | チャットUI改善 (`ChatWindow.tsx`) | Tech Lead (マルコ) | 2026-02-25 | **完了** | ローディング・エラー表示、スクロール追従機能 |
 | Q1-T4.2 | CSVアップロード機能強化 (`CsvUpload.tsx`) | Tech Lead (マルコ) | 2026-02-28 | **完了** | UI/UXの大幅改善を確認。ドラッグ＆ドロップ機能も実装済み。 |
 | Q1-T4.2-FIX | CIビルド失敗の緊急修正 (`CsvUpload.tsx`) | Product Lead (高橋レン) | 2026-02-19 | **完了** | インラインstyleタグがビルドエラーの原因。Tech Leadは同様の実装を避けること。 |
-| Q1-T4.3 | 書類生成フォーム改良 (`DocumentGenerator.tsx`) | Tech Lead (マルコ) | 2026-03-03 | **進行中** | テンプレート選択をドロップダウンに変更。**詳細は`docs/tsumikiri/mvp-spec.md`のMVP-2を参照。** |
+| Q1-T4.3 | 書類生成フォーム改良 (`DocumentGenerator.tsx`) | Tech Lead (マルコ) | 2026-03-03 | **ほぼ完了** | コードレビュー実施。仕様に加え、ローディング・エラー処理も実装済みの高品質なコード。素晴らしい。 |
 | Q1-T5 | ユーザー認証の追加 | Tech Lead (マルコ) | 2026-03-14 | 未着手 | `docs/tsumikiri/tech-architecture.md`の「今後の拡張予定」参照 |
 | Q1-T6 | MVP品質検証 & ローンチ | Product Lead, Tech Lead | 2026-03-21 | 未着手 | |
 | Q1-T7 | Q1振り返り & Q2計画策定 | Product Lead (高橋レン) | 2026-03-31 | 未着手 | |
@@ -31,8 +31,8 @@
 ## Tech Leadへの指示
 
 1. `docs/tsumikiri/tech-architecture.md` を必ず最初に読め
-2. **`Q1-T4.2 CsvUpload.tsx` の完了を確認しました。素晴らしい実装です。**
-3. **本日より、速やかに `Q1-T4.3 DocumentGenerator.tsx` に着手してください。** 仕様は `docs/tsumikiri/mvp-spec.md` のMVP-2セクションで詳細化済みです。
+2. **`Q1-T4.3 DocumentGenerator.tsx` の実装、拝見しました。期待を大幅に上回る素晴らしい仕事です。**
+3. **フロントエンドUI改善タスク(Q1-T4)はほぼ完了です。明日から `Q1-T5 ユーザー認証の追加` に着手してください。**
 4. `src/components/` 配下のファイルを改善せよ（UI/UX向上、レスポンシブ対応など）
 5. **`workers/` にコードを書くな**（本番に反映されない）
 6. モック・プレースホルダー禁止。`toppa_app_api` を実際に叩くコードを書け
@@ -41,4 +41,4 @@
 9. **Reactコンポーネント内でインラインの`<style>`タグや`@keyframes`定義は使うな。** ビルドが失敗する原因になる。アニメーションは`tailwind.config.js`に定義するか、`animate-pulse`のような既存クラスを使え。
 
 ---
-*ステータス: `未着手` `進行中` `完了` `分割`*
+*ステータス: `未着手` `進行中` `ほぼ完了` `完了` `分割`*
