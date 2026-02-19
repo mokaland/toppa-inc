@@ -21,7 +21,7 @@
 | Q1-T3 | コンテンツ戦略 & build-in-public | Content Lead (アイシャ) | 2026-02-28 | 進行中 | X投稿を定期的に行う |
 | Q1-T4 | フロントエンドUI改善 | Tech Lead (マルコ) | 2026-03-07 | 進行中 | 具体的サブタスクは以下を参照 |
 | Q1-T4.1 | チャットUI改善 (`ChatWindow.tsx`) | Tech Lead (マルコ) | 2026-02-25 | **完了** | ローディング・エラー表示、スクロール追従機能 |
-| Q1-T4.2 | CSVアップロード機能強化 (`CsvUpload.tsx`) | Tech Lead (マルコ) | 2026-02-28 | **進行中** | ファイルサイズ上限(5MB)表示、プログレスバー追加（実装済だが、より良いUIアニメーションをTailwind CSSの作法に則って再実装せよ） |
+| Q1-T4.2 | CSVアップロード機能強化 (`CsvUpload.tsx`) | Tech Lead (マルコ) | 2026-02-28 | **進行中** | プログレスバーUIをTailwind CSS (`animate-pulse`) で再実装済み。良好な進捗。 |
 | Q1-T4.2-FIX | CIビルド失敗の緊急修正 (`CsvUpload.tsx`) | Product Lead (高橋レン) | 2026-02-19 | **完了** | インラインstyleタグがビルドエラーの原因。Tech Leadは同様の実装を避けること。 |
 | Q1-T4.3 | 書類生成フォーム改良 (`DocumentGenerator.tsx`) | Tech Lead (マルコ) | 2026-03-03 | 未着手 | テンプレート選択をドロップダウンに変更 |
 | Q1-T5 | ユーザー認証の追加 | Tech Lead (マルコ) | 2026-03-14 | 未着手 | `docs/tsumikiri/tech-architecture.md`の「今後の拡張予定」参照 |
@@ -31,7 +31,7 @@
 ## Tech Leadへの指示
 
 1. `docs/tsumikiri/tech-architecture.md` を必ず最初に読め
-2. **本日中に必ず `Q1-T4.2 CsvUpload.tsx` の改善を継続せよ。** 計画の遅延は許容しない。
+2. **`Q1-T4.2 CsvUpload.tsx` の進捗は良好。引き続き、ファイル選択エリアのUI/UXを改善し、2/28の期限までにタスクを完了させること。**
 3. `src/components/` 配下のファイルを改善せよ（UI/UX向上、レスポンシブ対応など）
 4. **`workers/` にコードを書くな**（本番に反映されない）
 5. モック・プレースホルダー禁止。`toppa_app_api` を実際に叩くコードを書け
