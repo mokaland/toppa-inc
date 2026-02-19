@@ -1,18 +1,44 @@
+
 import { useState } from 'react';
 import ChatWindow from './components/ChatWindow';
 import CsvUpload from './components/CsvUpload';
 import DocumentGenerator from './components/DocumentGenerator';
+import Login from './components/Login';
 
 type Tab = 'chat' | 'csv' | 'docs';
 
 function App() {
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [activeTab, setActiveTab] = useState<Tab>('chat');
 
+  const handleLoginSuccess = () => {
+    setIsAuthenticated(true);
+  };
+
+  // 未認証の場合はログイン画面を表示
+  if (!isAuthenticated) {
+    return <Login onLoginSuccess={handleLoginSuccess} />;
+  }
+
+  // 認証済みの場合はメインのダッシュボードを表示
   const tabs: { key: Tab; label: string }[] = [
     { key: 'chat', label: 'AIチャット' },
     { key: 'csv', label: 'レポート生成' },
     { key: 'docs', label: '書類作成' },
   ];
+
+  const renderContent = () => {
+    switch (activeTab) {
+      case 'chat':
+        return <ChatWindow />;
+      case 'csv':
+        return <CsvUpload />;
+      case 'docs':
+        return <DocumentGenerator />;
+      default:
+        return null;
+    }
+  };
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -23,7 +49,7 @@ function App() {
             <h1 className="text-2xl font-bold tracking-tight">ツミキリ</h1>
             <p className="text-indigo-200 text-sm">中小企業の"詰み"をAIで突破する</p>
           </div>
-          <span className="text-xs bg-indigo-500 px-2 py-1 rounded">MVP開発中</span>
+          {/* TODO: ログアウトボタンを後ほど実装 */}
         </div>
       </header>
 
@@ -47,14 +73,10 @@ function App() {
       </nav>
 
       {/* メインコンテンツ */}
-      <main className="max-w-5xl mx-auto px-4 py-6">
-        {activeTab === 'chat' && (
-          <div className="h-[calc(100vh-220px)]">
-            <ChatWindow />
-          </div>
-        )}
-        {activeTab === 'csv' && <CsvUpload />}
-        {activeTab === 'docs' && <DocumentGenerator />}
+      <main>
+        <div className="max-w-5xl mx-auto py-6 px-4">
+          {renderContent()}
+        </div>
       </main>
     </div>
   );
