@@ -1,5 +1,5 @@
-
 import React, { useState, useCallback } from 'react';
+import Papa from 'papaparse';
 
 
 const API_URL = '/api/reports/generate';
@@ -35,19 +35,47 @@ const CsvUpload: React.FC = () => {
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string>('');
   const [fileName, setFileName] = useState<string>('');
+  const [csvPreview, setCsvPreview] = useState<string[][] | null>(null);
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = event.target.files?.[0];
     if (selectedFile) {
+      if (selectedFile.type !== 'text/csv') {
+        setError('対応しているファイル形式はCSVのみです');
+        setFile(null);
+        setFileName('');
+        setCsvPreview(null);
+        return;
+      }
       if (selectedFile.size > MAX_FILE_SIZE) {
         setError(`ファイルサイズが5MBを超えています: ${(selectedFile.size / 1024 / 1024).toFixed(2)}MB`);
         setFile(null);
         setFileName('');
+        setCsvPreview(null);
         return;
       }
       setFile(selectedFile);
       setFileName(selectedFile.name);
       setError('');
+
+      // Read and parse CSV for preview
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const result = e.target?.result;
+        if (typeof result === 'string') {
+          Papa.parse(result, {
+            preview: 5, // Get first 5 rows
+            complete: (results) => {
+              setCsvPreview(results.data as string[][]);
+            },
+            error: (err: any) => {
+              setError(`CSVプレビューの読み込み中にエラーが発生しました: ${err.message}`);
+              setCsvPreview(null);
+            },
+          });
+        }
+      };
+      reader.readAsText(selectedFile);
     }
   };
 
@@ -78,13 +106,18 @@ const CsvUpload: React.FC = () => {
       });
 
       if (!response.ok) {
+        // Specific error message for AI processing failure
+        setError('レポートの生成に失敗しました。もう一度お試しください');
         throw new Error(`APIエラー: ${response.status} ${response.statusText}`);
       }
 
       const data = await response.json();
       setReport(data.report);
     } catch (err) {
-      setError(err instanceof Error ? err.message : '不明なエラーが発生しました。');
+      // General error message for other fetch issues
+      if (!(err instanceof Error && err.message.startsWith('APIエラー'))) {
+        setError('不明なエラーが発生しました。');
+      }
     } finally {
       setIsLoading(false);
     }
@@ -98,15 +131,56 @@ const CsvUpload: React.FC = () => {
     event.preventDefault();
     const droppedFile = event.dataTransfer.files?.[0];
     if (droppedFile) {
+        if (droppedFile.type !== 'text/csv') {
+            setError('対応しているファイル形式はCSVのみです');
+            setFile(null);
+            setFileName('');
+            setCsvPreview(null);
+            return;
+        }
         if (droppedFile.size > MAX_FILE_SIZE) {
             setError(`ファイルサイズが5MBを超えています: ${(droppedFile.size / 1024 / 1024).toFixed(2)}MB`);
             setFile(null);
             setFileName('');
+            setCsvPreview(null);
             return;
         }
         setFile(droppedFile);
         setFileName(droppedFile.name);
         setError('');
+
+        // Read and parse CSV for preview
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          const result = e.target?.result;
+          if (typeof result === 'string') {
+            Papa.parse(result, {
+              preview: 5,
+              complete: (results) => {
+                setCsvPreview(results.data as string[][]);
+              },
+              error: (err: any) => {
+                setError(`CSVプレビューの読み込み中にエラーが発生しました: ${err.message}`);
+                setCsvPreview(null);
+              },
+            });
+          }
+        };
+        reader.readAsText(droppedFile);
+    }
+  };
+
+  const handleDownloadReport = () => {
+    if (report) {
+      const blob = new Blob([report], { type: 'text/markdown' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'report.md';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
     }
   };
 
@@ -129,6 +203,27 @@ const CsvUpload: React.FC = () => {
         <p className="text-xs text-gray-500 mt-1">またはクリックしてファイルを選択 (最大5MB)</p>
       </div>
 
+      {csvPreview && csvPreview.length > 0 && (
+        <div className="mt-4 p-3 bg-blue-50 border border-blue-200 text-blue-800 rounded-md">
+          <h3 className="text-md font-semibold mb-2">CSVプレビュー (最初の5行):</h3>
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-blue-200">
+              <tbody className="bg-white divide-y divide-blue-200">
+                {csvPreview.map((row, rowIndex) => (
+                  <tr key={rowIndex}>
+                    {row.map((cell, cellIndex) => (
+                      <td key={cellIndex} className="px-3 py-1 whitespace-nowrap text-sm text-gray-800">
+                        {cell}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
       <div className="mt-4">
         <label htmlFor="instructions" className="block text-sm font-medium text-gray-700 mb-1">
           指示内容
@@ -145,7 +240,7 @@ const CsvUpload: React.FC = () => {
 
       <button
         onClick={handleGenerateReport}
-        disabled={isLoading}
+        disabled={isLoading || !file}
         className="mt-4 w-full bg-blue-600 text-white font-bold py-2 px-4 rounded-md hover:bg-blue-700 disabled:bg-blue-300 disabled:cursor-not-allowed transition-colors flex items-center justify-center"
       >
         {isLoading ? <SpinnerIcon /> : 'レポートを生成'}
@@ -168,7 +263,13 @@ const CsvUpload: React.FC = () => {
       {report && (
         <div className="mt-6 p-4 bg-white border border-gray-200 rounded-lg shadow-sm">
           <h3 className="text-lg font-semibold text-gray-800 mb-2">生成されたレポート</h3>
-          <div className="prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: report }} />
+          <pre className="prose prose-sm max-w-none whitespace-pre-wrap p-2 bg-gray-100 rounded-md overflow-auto">{report}</pre>
+          <button
+            onClick={handleDownloadReport}
+            className="mt-4 bg-green-600 text-white font-bold py-2 px-4 rounded-md hover:bg-green-700 transition-colors"
+          >
+            レポートをダウンロード (.md)
+          </button>
         </div>
       )}
     </div>
