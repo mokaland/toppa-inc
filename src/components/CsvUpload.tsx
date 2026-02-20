@@ -1,8 +1,9 @@
 
 import React, { useState, useCallback } from 'react';
-import Papa from 'papaparse';
 
-const API_URL = 'https://us-central1-gen-lang-client-0841897546.cloudfunctions.net/toppa_app_api';
+
+const API_BASE_URL = 'https://us-central1-gen-lang-client-0841897546.cloudfunctions.net/toppa_app_api';
+const API_URL = `${API_BASE_URL}/generate`;
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
 
 // --- Icon Components ---
@@ -51,7 +52,7 @@ const CsvUpload: React.FC = () => {
     }
   };
 
-  const handleGenerateReport = useCallback(() => {
+  const handleGenerateReport = useCallback(async () => {
     if (!file) {
       setError('CSVファイルをアップロードしてください。');
       return;
@@ -65,38 +66,30 @@ const CsvUpload: React.FC = () => {
     setError('');
     setReport('');
 
-    Papa.parse(file, {
-      complete: async (results) => {
-        const csvData = Papa.unparse(results.data);
-        
-        try {
-          const response = await fetch(API_URL, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              action: 'report',
-              csv_data: csvData,
-              instructions: instructions,
-            }),
-          });
+    try {
+      const fileContent = await file.text();
+      
+      const response = await fetch(API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fileName: file.name,
+          fileContent: fileContent,
+          prompt: instructions,
+        }),
+      });
 
-          if (!response.ok) {
-            throw new Error(`APIエラー: ${response.status} ${response.statusText}`);
-          }
+      if (!response.ok) {
+        throw new Error(`APIエラー: ${response.status} ${response.statusText}`);
+      }
 
-          const data = await response.json();
-          setReport(data.report);
-        } catch (err) {
-          setError(err instanceof Error ? err.message : '不明なエラーが発生しました。');
-        } finally {
-          setIsLoading(false);
-        }
-      },
-      error: (err) => {
-        setError(`CSVの解析に失敗しました: ${err.message}`);
-        setIsLoading(false);
-      },
-    });
+      const data = await response.json();
+      setReport(data.report);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '不明なエラーが発生しました。');
+    } finally {
+      setIsLoading(false);
+    }
   }, [file, instructions]);
   
   const onDragOver = (event: React.DragEvent<HTMLDivElement>) => {
