@@ -1,14 +1,16 @@
+import { OpenAI } from 'openai';
+
 /**
  * AIにレポート生成を依頼するコアロジック
  * @param jsonData - フロントエンドでパース済みのデータ（JSON文字列）
  * @param userPrompt - ユーザーからの指示
- * @param aiApiKey - AIプロバイダーのAPIキー
+ * @param apiKey - AIプロバイダーのAPIキー
  * @returns 生成されたレポート（Markdown形式）
  */
 export async function generateReport(
   jsonData: string,
   userPrompt: string,
-  aiApiKey: string,
+  apiKey: string,
 ): Promise<string> {
   if (!jsonData || jsonData.trim() === '[]' || jsonData.trim() === '{}') {
     throw new Error('データが空です。');
@@ -16,39 +18,21 @@ export async function generateReport(
   if (!userPrompt) {
     throw new Error('ユーザーの指示がありません。');
   }
-  if (!aiApiKey || typeof aiApiKey !== 'string' || !aiApiKey.startsWith('sk-')) {
-    throw new Error('無効なAPIキーです。');
+  if (!apiKey) {
+    throw new Error('APIキーが提供されていません。');
   }
 
-  const systemPrompt = `あなたは中小企業の経営者を支援する優秀な経営コンサルタントです。
-提供されたJSONデータを分析し、経営者の意思決定に役立つレポートを作成してください。
-レポートは必ずMarkdown形式で、以下の構成を守ってください。
+  const systemPrompt = `あなたは中小企業の経営者を支援する優秀な経営コンサルタントです。\n提供されたJSONデータを分析し、経営者の意思決定に役立つレポートを作成してください。\nレポートは必ずMarkdown形式で、以下の構成を守ってください。\n\n1.  **総括**: 分析結果の要点\n2.  **インサイト**: データから読み取れる具体的な洞察や傾向\n3.  **アクションプラン**: 次に取るべき具体的な行動提案\n\n専門用語を避け、平易な言葉で記述してください。`;
 
-1.  **総括**: 分析結果の要点
-2.  **インサイト**: データから読み取れる具体的な洞察や傾向
-3.  **アクションプラン**: 次に取るべき具体的な行動提案
+  const userMessage = `以下のデータと指示に基づいてレポートを作成してください。\n\n### データ (JSON)\n\`\`\`json\n${jsonData}\n\`\`\`\n\n### 指示\n${userPrompt}\n`;
 
-専門用語を避け、平易な言葉で記述してください。`;
+  // OpenAIクライアントの初期化
+  const openai = new OpenAI({
+    apiKey: apiKey,
+  });
 
-  const userMessage = `以下のデータと指示に基づいてレポートを作成してください。
-
-### データ (JSON)
-\`\`\`json
-${jsonData}
-\`\`\`
-
-### 指示
-${userPrompt}
-`;
-
-  // OpenAI APIを呼び出す
-  const response = await fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${aiApiKey}`,
-    },
-    body: JSON.stringify({
+  try {
+    const response = await openai.chat.completions.create({
       model: 'gpt-4o',
       messages: [
         { role: 'system', content: systemPrompt },
@@ -56,20 +40,21 @@ ${userPrompt}
       ],
       temperature: 0.3,
       max_tokens: 2000,
-    }),
-  });
+    });
 
-  if (!response.ok) {
-    const errorBody = await response.text();
-    console.error('OpenAI API Error:', errorBody);
-    throw new Error(`AI APIとの連携に失敗しました (HTTP ${response.status})`);
-  }
+    const report = response.choices[0]?.message?.content;
 
-  const data = await response.json();
-  
-  if (!data.choices || data.choices.length === 0 || !data.choices[0].message?.content) {
-      throw new Error('AIからの応答が予期せぬ形式です。');
+    if (!report) {
+      throw new Error('AIからのレスポンスにレポート内容が含まれていませんでした。');
+    }
+
+    return report;
+  } catch (error) {
+    console.error('OpenAI API request failed:', error);
+    // エラー情報をより詳細にラップして再スロー
+    if (error instanceof Error) {
+        throw new Error(`AI APIリクエストに失敗しました: ${error.message}`);
+    }
+    throw new Error('AI APIリクエスト中に不明なエラーが発生しました。');
   }
-  
-  return data.choices[0].message.content;
 }

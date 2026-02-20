@@ -8,8 +8,7 @@ import { generateReport } from './report'; // generateReportをインポート
 type Bindings = {
   SUPABASE_URL: string;
   SUPABASE_ANON_KEY: string;
-  // TODO: AIプロバイダーのAPIキーをBindingsに追加
-  // OPENAI_API_KEY: string;
+  OPENAI_API_KEY: string;
 }
 
 const app = new Hono<{ Bindings: Bindings }>();
@@ -41,8 +40,8 @@ api.post('/reports/generate', async (c) => {
 
     // 2. AIにレポート生成を依頼
     // TODO: ユーザーのAPIキー(BYOK)またはシステムのAPIキーを渡す
-    const dummyApiKey = 'dummy-api-key-for-now';
-    const report = await generateReport(jsonData, userInstruction, dummyApiKey);
+    const openaiApiKey = c.env.OPENAI_API_KEY;
+    const report = await generateReport(jsonData, userInstruction, openaiApiKey);
 
     return c.json({ report });
 

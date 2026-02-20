@@ -1,85 +1,33 @@
-import { OpenAI } from 'openai';
-
-// HonoのContextから環境変数を取得するための型定義
-// wrangler.tomlで設定されたSecretsとVariablesにアクセスできる
-type Env = {
-  Bindings: {
-    OPENAI_API_KEY: string;
-  };
-};
-
 /**
- * AIにレポート生成を依頼するコアロジック
- * @param jsonData - フロントエンドでパース済みのデータ（JSON文字列）
- * @param userPrompt - ユーザーからの指示
- * @param c - HonoのContextオブジェクト。環境変数へのアクセスに利用
- * @returns 生成されたレポート（Markdown形式）
+ * CSV文字列をJSONオブジェクトの配列に変換します。
+ * @param csvString - CSV形式の文字列
+ * @returns JSON形式の文字列（オブジェクトの配列）
  */
-export async function generateReport(
-  jsonData: string,
-  userPrompt: string,
-  apiKey: string,
-): Promise<string> {
-  if (!jsonData || jsonData.trim() === '[]' || jsonData.trim() === '{}') {
-    throw new Error('データが空です。');
-  }
-  if (!userPrompt) {
-    throw new Error('ユーザーの指示がありません。');
-  }
-  if (!apiKey) {
-    throw new Error('APIキーが提供されていません。');
-  }
-
-  const systemPrompt = `あなたは中小企業の経営者を支援する優秀な経営コンサルタントです。
-提供されたJSONデータを分析し、経営者の意思決定に役立つレポートを作成してください。
-レポートは必ずMarkdown形式で、以下の構成を守ってください。
-
-1.  **総括**: 分析結果の要点
-2.  **インサイト**: データから読み取れる具体的な洞察や傾向
-3.  **アクションプラン**: 次に取るべき具体的な行動提案
-
-専門用語を避け、平易な言葉で記述してください。`;
-
-  const userMessage = `以下のデータと指示に基づいてレポートを作成してください。
-
-### データ (JSON)
-\`\`\`json
-${jsonData}
-\`\`\`
-
-### 指示
-${userPrompt}
-`;
-
-  // OpenAIクライアントの初期化
-  const openai = new OpenAI({
-    apiKey: apiKey,
-  });
-
-  try {
-    const response = await openai.chat.completions.create({
-      model: 'gpt-4o',
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userMessage },
-      ],
-      temperature: 0.3,
-      max_tokens: 2000,
-    });
-
-    const report = response.choices[0]?.message?.content;
-
-    if (!report) {
-      throw new Error('AIからのレスポンスにレポート内容が含まれていませんでした。');
+export function csvToJson(csvString: string): string {
+    if (!csvString || csvString.trim() === '') {
+        return '[]';
     }
 
-    return report;
-  } catch (error) {
-    console.error('OpenAI API request failed:', error);
-    // エラー情報をより詳細にラップして再スロー
-    if (error instanceof Error) {
-        throw new Error(`AI APIリクエストに失敗しました: ${error.message}`);
+    const lines = csvString.trim().split(/\\r?\\n/);
+    if (lines.length === 0) {
+        return '[]';
     }
-    throw new Error('AI APIリクエスト中に不明なエラーが発生しました。');
-  }
+
+    const headers = lines[0].split(',').map(header => header.trim());
+    const result = [];
+
+    for (let i = 1; i < lines.length; i++) {
+        const values = lines[i].split(',').map(value => value.trim());
+        if (values.length === 0 || (values.length === 1 && values[0] === '')) {
+            continue; // 空行をスキップ
+        }
+
+        const obj: { [key: string]: string } = {};
+        for (let j = 0; j < headers.length; j++) {
+            obj[headers[j]] = values[j] !== undefined ? values[j] : '';
+        }
+        result.push(obj);
+    }
+
+    return JSON.stringify(result, null, 2);
 }
