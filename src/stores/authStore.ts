@@ -12,7 +12,7 @@ interface AuthState {
   checkUser: () => void;
 }
 
-export const useAuthStore = create<AuthState>((set, get) => ({
+export const useAuthStore = create<AuthState>((set) => ({
   user: null,
   session: null,
   setUser: (user) => set({ user }),
