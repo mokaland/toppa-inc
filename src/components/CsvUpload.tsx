@@ -263,7 +263,7 @@ const CsvUpload: React.FC = () => {
       {report && (
         <div className="mt-6 p-4 bg-white border border-gray-200 rounded-lg shadow-sm">
           <h3 className="text-lg font-semibold text-gray-800 mb-2">生成されたレポート</h3>
-          <pre className="prose prose-sm max-w-none whitespace-pre-wrap p-2 bg-gray-100 rounded-md overflow-auto">{report}</pre>
+          <div className="prose prose-sm max-w-none p-2 bg-gray-100 rounded-md overflow-auto" dangerouslySetInnerHTML={{ __html: report }} />
           <button
             onClick={handleDownloadReport}
             className="mt-4 bg-green-600 text-white font-bold py-2 px-4 rounded-md hover:bg-green-700 transition-colors"
