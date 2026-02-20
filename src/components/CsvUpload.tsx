@@ -2,8 +2,7 @@
 import React, { useState, useCallback } from 'react';
 
 
-const API_BASE_URL = 'https://us-central1-gen-lang-client-0841897546.cloudfunctions.net/toppa_app_api';
-const API_URL = `${API_BASE_URL}/generate`;
+const API_URL = '/api/reports/generate';
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
 
 // --- Icon Components ---
@@ -73,9 +72,8 @@ const CsvUpload: React.FC = () => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          fileName: file.name,
-          fileContent: fileContent,
-          prompt: instructions,
+          csvData: fileContent,
+          userInstruction: instructions,
         }),
       });
 
