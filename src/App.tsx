@@ -9,7 +9,7 @@ import { useAuthStore } from './stores/authStore';
 type Tab = 'chat' | 'csv' | 'docs';
 
 function App() {
-  const { user, checkUser } = useAuthStore();
+  const { user, checkUser, logout } = useAuthStore();
   const [activeTab, setActiveTab] = useState<Tab>('chat');
 
   useEffect(() => {
@@ -50,7 +50,12 @@ function App() {
             <h1 className="text-2xl font-bold tracking-tight">ツミキリ</h1>
             <p className="text-indigo-200 text-sm">中小企業の"詰み"をAIで突破する</p>
           </div>
-          {/* TODO: ログアウトボタンを後ほど実装 */}
+          <button
+            onClick={logout}
+            className="ml-4 inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md shadow-sm text-white bg-indigo-500 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+          >
+            ログアウト
+          </button>
         </div>
       </header>
 
