@@ -1,23 +1,24 @@
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import ChatWindow from './components/ChatWindow';
 import CsvUpload from './components/CsvUpload';
 import DocumentGenerator from './components/DocumentGenerator';
 import Login from './components/Login';
+import { useAuthStore } from './stores/authStore';
 
 type Tab = 'chat' | 'csv' | 'docs';
 
 function App() {
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const { user, checkUser } = useAuthStore();
   const [activeTab, setActiveTab] = useState<Tab>('chat');
 
-  const handleLoginSuccess = () => {
-    setIsAuthenticated(true);
-  };
+  useEffect(() => {
+    checkUser();
+  }, [checkUser]);
 
   // 未認証の場合はログイン画面を表示
-  if (!isAuthenticated) {
-    return <Login onLoginSuccess={handleLoginSuccess} />;
+  if (!user) {
+    return <Login />;
   }
 
   // 認証済みの場合はメインのダッシュボードを表示

@@ -1,11 +1,7 @@
 import React, { useState } from 'react';
 import { useAuthStore } from '@/stores/authStore';
 
-interface LoginProps {
-  onLoginSuccess: () => void;
-}
-
-const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
+const Login: React.FC = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -16,7 +12,6 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
     setError(null);
     try {
       await login(email, password);
-      onLoginSuccess();
     } catch (err: any) {
       setError(err.message || 'ログインに失敗しました。');
     }
