@@ -23,34 +23,16 @@
 | Q1-T4.1 | チャットUI改善 (`ChatWindow.tsx`) | Tech Lead (マルコ) | 2026-02-25 | 完了 | ローディング・エラー表示、スクロール追従機能 |
 | Q1-T4.2 | CSVアップロード機能強化 (`CsvUpload.tsx`) | Tech Lead (マルコ) | 2026-02-28 | 完了 | UI/UXの大幅改善を確認。ドラッグ＆ドロップ機能も実装済み。 |
 | Q1-T4.3 | 書類生成フォーム改良 (`DocumentGenerator.tsx`) | Tech Lead (マルコ) | 2026-03-03 | 完了 | CI通過・機能完了を確認。 |
-| Q1-T5 | ユーザー認証の追加 | Tech Lead (マルコ) | 2026-03-14 | **進行中 (遅延)** | `Login.tsx`のUI実装のみ完了。**状態管理ロジックの実装に着手していない。** |
+| Q1-T5 | ユーザー認証の追加 | Tech Lead (マルコ) | 2026-03-14 | **進行中** | `src/stores/authStore.ts` にSupabase連携を含む状態管理ロジックの実装完了。 |
 | Q1-T6 | MVP品質検証 & ローンチ | Product Lead, Tech Lead | 2026-03-21 | 未着手 | |
 | Q1-T7 | Q1振り返り & Q2計画策定 | Product Lead (高橋レン) | 2026-03-31 | 未着手 | |
 
 
 ## Tech Leadへの指示
 
-1.  **最優先・本日中に対応:** `Q1-T5`（ユーザー認証）の進捗に遅延が見られる。**本日中に** `src/stores/authStore.ts` を作成し、認証状態を管理するロジックを実装すること。
-    -   状態管理ライブラリは `zustand` を使用せよ (`npm install zustand`)。
-    -   以下を参考に、ストアの雛形を作成し、`Login.tsx`から呼び出せるようにせよ。
-        ```typescript
-        // src/stores/authStore.ts
-        import { create } from 'zustand';
-
-        interface AuthState {
-          token: string | null;
-          isLoggedIn: boolean;
-          login: (token: string) => void;
-          logout: () => void;
-        }
-
-        export const useAuthStore = create<AuthState>((set) => ({
-          token: null,
-          isLoggedIn: false,
-          login: (token) => set({ token, isLoggedIn: true }),
-          logout: () => set({ token, null, isLoggedIn: false }),
-        }));
-        ```
+1.  **最優先:** `Q1-T5`（ユーザー認証）の遅延が回復した。素晴らしい進捗だ。次のステップとして、**本日中に** `src/components/Login.tsx` から `useAuthStore` を呼び出し、UIと認証ロジックを接続すること。
+    -   ログインフォームの `onSubmit` イベントで `useAuthStore` の `login` 関数を呼び出す。
+    -   ログイン状態 (`isLoggedIn` や `user` の状態）に応じて、UIの表示を切り替える（例: ログイン後はユーザー名を表示、ログアウトボタンを表示）。
 2.  コミット前に必ず `npx tsc --noEmit && npm run build` を実行し、両方パスすることを確認してからコミットすること。
 3.  インラインstyleタグ（`<style>` や `style={{}}`）は絶対に使わないこと。Tailwind CSSクラスのみ使用する。
 
