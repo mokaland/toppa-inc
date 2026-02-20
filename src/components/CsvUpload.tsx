@@ -243,13 +243,20 @@ const CsvUpload: React.FC = () => {
         disabled={isLoading || !file}
         className="mt-4 w-full bg-blue-600 text-white font-bold py-2 px-4 rounded-md hover:bg-blue-700 disabled:bg-blue-300 disabled:cursor-not-allowed transition-colors flex items-center justify-center"
       >
-        {isLoading ? <SpinnerIcon /> : 'レポートを生成'}
-        {isLoading && <span className="ml-2">生成中...</span>}
+        {isLoading ? (
+          <>
+            <SpinnerIcon />
+            <span className="ml-2">AIレポート生成中...</span>
+          </>
+        ) : (
+          'レポートを生成'
+        )}
       </button>
 
       {isLoading && (
-        <div className="mt-4">
+        <div className="mt-4 text-center text-sm text-gray-600">
             <ProgressBar />
+            <p className="mt-2">AIがレポートを生成しています。しばらくお待ちください...</p>
         </div>
       )}
 
