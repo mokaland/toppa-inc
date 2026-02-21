@@ -9,19 +9,14 @@ interface Env {
 const report = new Hono<{ Bindings: Env }>();
 
 report.post('/generate', async (c) => {
-  const { fileContent, fileName, prompt } = await c.req.json();
-
-  // 1. ファイル内容の解析
-  if (!fileName.endsWith('.csv')) {
-    return c.json({ error: 'Unsupported file type. Only CSV is supported for report generation.' }, 400);
-  }
+  const { csvData, userInstruction } = await c.req.json();
 
   // 2. AIプロバイダーへのリクエスト (Gemini API連携)
   try {
     const genAI = new GoogleGenerativeAI(c.env.GEMINI_API_KEY);
     const model = genAI.getGenerativeModel({ model: "gemini-pro" });
 
-    const fullPrompt = `以下のCSVデータに基づいて、ユーザーの指示に従いレポートを生成してください。出力はMarkdown形式でお願いします。\n\nユーザーの指示:\n${prompt}\n\nCSVデータ:\n${fileContent}`;
+    const fullPrompt = `以下のCSVデータに基づいて、ユーザーの指示に従いレポートを生成してください。出力はMarkdown形式でお願いします。\n\nユーザーの指示:\n${userInstruction}\n\nCSVデータ:\n${csvData}`;
 
     const result = await model.generateContent(fullPrompt);
     const response = await result.response;

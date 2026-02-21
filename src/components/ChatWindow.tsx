@@ -66,7 +66,7 @@ const ChatWindow = () => {
 
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : '不明なエラーが発生しました。';
-      setError('メッセージの送信に失敗しました。時間をおいて再度お試しください。');
+      setError(`メッセージの送信に失敗しました。詳細: ${errorMessage}`);
       // ユーザーが入力したメッセージを復元
       setMessages(messages);
     } finally {
