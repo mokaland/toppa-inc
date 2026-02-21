@@ -17,13 +17,13 @@ Content Leadはこれを受け、中断していたコンテンツ戦略を再�
 | Q1-T1 | プロダクト仕様策定 (`docs/tsumikiri/mvp-spec.md`) | Product Lead (高橋レン) | 2026-02-21 | 完了 | v1.2に更新済み |
 | Q1-T2 | 技術アーキテクチャ設計 (`docs/tsumikiri/tech-architecture.md`) | Product Lead (高橋レン) | 2026-02-18 | 完了 | GCP Cloud Function + GitHub Pages で稼働中 |
 | Q1-T3 | コンテンツ戦略 & build-in-public | Content Lead (アイシャ) | 2026-02-28 | **進行中** | プロジェクト再開 |
-| Q1-T4 | フロントエンドUI改善（実装フェーズ） | **Product Lead (高橋レン)** | 2026-03-07 | **進行中** | **開発再開** |
-| Q1-T4.1 | `ChatWindow.tsx` メッセージ表示UI改善 | Product Lead (高橋レン) | 2026-02-24 | **進行中** | CIビルド失敗を修正する安定版コードをコミット済み。ビルド正常化後に再実装に着手。 |
-| Q1-T4.2 | `ChatWindow.tsx` 入力フォームUI改善 | Product Lead (高橋レン) | 2026-02-25 | **進行中** | CIビルド失敗を修正する安定版コードをコミット済み。ビルド正常化後に再実装に着手。 |
+| Q1-T4 | フロントエンドUI改善（実装フェーズ） | **Product Lead (高橋レン)** | 2026-03-07 | **進行中** | **CIビルド正常化。開発を本格再開。** |
+| Q1-T4.1 | `ChatWindow.tsx` メッセージ表示UI改善 | Product Lead (高橋レン) | 2026-02-24 | **進行中** | CIビルドが正常化したため、UI改善タスクを再開。 |
+| Q1-T4.2 | `ChatWindow.tsx` 入力フォームUI改善 | Product Lead (高橋レン) | 2026-02-25 | **進行中** | CIビルドが正常化したため、UI改善タスクを再開。 |
 | Q1-T4.3 | `CsvUpload.tsx` UI改善 | Product Lead (高橋レン) | 2026-02-28 | 未着手 | ファイル選択エリア、進捗表示 |
 | Q1-T4.4 | `DocumentGenerator.tsx` UI改善 | Product Lead (高橋レン) | 2026-03-03 | 未着手 | テンプレート選択、結果表示 |
 | Q1-T4.5 | アプリ全体のデザイントークン整理 | Product Lead (高橋レン) | 2026-03-07 | 未着手 | 色、フォントサイズ等の一貫性確保 |
-| Q1-T5 | ユーザー認証の追加 | **Product Lead (高橋レン)** | 未定 | 中断 | Q1スコープ外 |
+| Q1-T5 | ユーザー認証の追加 | **Product Lead (高橋レン)** | 未定 | 中断 | Q1スコープ外。App.tsxに誤実装されたため緊急ロールバックを実施。 |
 | Q1-T6 | MVP品質検証 & ローンチ | Product Lead (高橋レン) | **未定** | 中断 | 開発進捗に依存 |
 | Q1-T6.1 | E2Eテスト作成 (Playwright推奨) | **Product Lead (高橋レン)** | 2026-03-14 | 未着手 | UI改善後に着手 |
 | Q1-T7 | Q1振り返り & Q2計画策定 | Product Lead (高橋レン) | 2026-03-31 | 未着手 | ローンチ延期に伴い、計画全体を再評価 |
