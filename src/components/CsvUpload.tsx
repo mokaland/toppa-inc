@@ -1,4 +1,3 @@
-
 import React, { useState, useCallback } from 'react';
 import Papa from 'papaparse';
 import { useDropzone } from 'react-dropzone';
@@ -31,7 +30,7 @@ const CsvUpload: React.FC = () => {
   const [error, setError] = useState<string>('');
   const [preview, setPreview] = useState<string[][]>([]);
 
-  const onDrop = useCallback((acceptedFiles: File[], rejectedFiles: any[]) => {
+  const onDrop = useCallback((acceptedFiles: File[], rejectedFiles: unknown[]) => {
     setError('');
     setFile(null);
     setPreview([]);
@@ -52,8 +51,8 @@ const CsvUpload: React.FC = () => {
         preview: 5,
         complete: (results) => {
           const headerRow = results.meta.fields ? [results.meta.fields] : [];
-          const dataRows = results.data as any[];
-          const previewData = headerRow.concat(dataRows.map(row => Object.values(row)));
+          const dataRows = results.data as unknown[];
+          const previewData = headerRow.concat(dataRows.map(row => Object.values(row as Record<string, string>)));
           setPreview(previewData as string[][]);
         },
         error: () => {
@@ -103,7 +102,7 @@ const CsvUpload: React.FC = () => {
         });
 
         if (!response.ok) {
-          throw new Error(\`APIエラー: \${response.status} \${response.statusText}\`);
+          throw new Error(`APIエラー: ${response.status} ${response.statusText}`);
         }
 
         const data = await response.json();
@@ -115,8 +114,8 @@ const CsvUpload: React.FC = () => {
             throw new Error('APIからのレスポンスにレポートが含まれていません。');
         }
 
-      } catch (err: any) {
-        setError(err.message || 'レポートの生成中に不明なエラーが発生しました。');
+      } catch (err: unknown) {
+        setError((err as Error).message || 'レポートの生成中に不明なエラーが発生しました。');
       } finally {
         setIsLoading(false);
       }
@@ -153,9 +152,9 @@ const CsvUpload: React.FC = () => {
           <h2 className="text-xl font-semibold text-gray-700 mb-4">Step 1: CSVファイルをアップロード</h2>
           <div
             {...getRootProps()}
-            className={\`border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors \${
+            className={`border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors ${
               isDragActive ? 'border-blue-500 bg-blue-50' : 'border-gray-300 hover:border-gray-400'
-            }\`}
+            }`}
           >
             <input {...getInputProps()} />
             <div className="flex flex-col items-center">
