@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState } from 'react';
 
 const API_URL = 'https://us-central1-gen-lang-client-0841897546.cloudfunctions.net/toppa_app_api';
 
@@ -8,21 +8,21 @@ interface Message {
   content: string;
 }
 
-const ChatWindow = () => {
+// シンプルなスピナーアイコン
+const SpinnerIcon = () => (
+    <svg className="animate-spin h-5 w-5 text-gray-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+    </svg>
+);
+
+const ChatWindow: React.FC = () => {
   const [messages, setMessages] = useState<Message[]>([
     { role: 'assistant', content: 'こんにちは！経営に関するお悩みがあれば、お気軽にご相談ください。' }
   ]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  };
-
-  useEffect(() => {
-    scrollToBottom();
-  }, [messages, isLoading]);
+  const [error, setError] = useState<string | null>(null);
 
   const sendMessage = async () => {
     if (!input.trim() || isLoading) return;
@@ -32,6 +32,7 @@ const ChatWindow = () => {
     setMessages(newMessages);
     setInput('');
     setIsLoading(true);
+    setError(null);
 
     try {
       const res = await fetch(API_URL, {
@@ -39,81 +40,73 @@ const ChatWindow = () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'chat',
-          messages: newMessages.map(msg => ({ role: msg.role, content: msg.content }))
+          messages: newMessages
         }),
       });
 
       if (!res.ok) {
-        throw new Error('APIからの応答がありませんでした。しばらくしてから再度お試しください。');
+        throw new Error(`APIエラー: ${res.status} ${res.statusText}`);
       }
 
       const data = await res.json();
-      if (!data.response) {
-        throw new Error('無効なレスポンス形式です。');
+      if (data.response) {
+        setMessages([...newMessages, { role: 'assistant', content: data.response }]);
+      } else {
+        throw new Error('APIからのレスポンスにコンテンツが含まれていません。');
       }
-      const assistantMessage: Message = { role: 'assistant', content: data.response };
-      setMessages(prevMessages => [...prevMessages, assistantMessage]);
-
-    } catch (error) {
-      const errorMessage: Message = {
-        role: 'assistant',
-        content: error instanceof Error ? error.message : '不明なエラーが発生しました。'
-      };
-      setMessages(prevMessages => [...prevMessages, errorMessage]);
+    } catch (e: any) {
+      setError(e.message || 'メッセージの送信中に不明なエラーが発生しました。');
+      setMessages(messages); // Restore previous messages on error
     } finally {
       setIsLoading(false);
     }
   };
 
   return (
-    <div className="flex flex-col h-[calc(100vh-120px)] bg-white rounded-lg shadow-md">
-      <div className="p-4 border-b">
-        <h1 className="text-xl font-bold text-gray-800">AIチャット</h1>
-      </div>
-      <div className="flex-1 p-4 overflow-y-auto bg-gray-50">
+    <div className="flex flex-col h-full bg-gray-50 p-4">
+      {/* メッセージ表示エリア */}
+      <div className="flex-grow overflow-y-auto mb-4 p-4 bg-white rounded-lg shadow-inner">
         {messages.map((msg, index) => (
-          <div key={index} className={`my-2 flex \${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-            <div className={`p-3 rounded-lg max-w-lg whitespace-pre-wrap \${
-              msg.role === 'user'
-                ? 'bg-blue-500 text-white'
-                : 'bg-gray-200 text-gray-800'
-            }`}>
-              {msg.content}
+          <div key={index} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} mb-3`}>
+            <div className={`max-w-prose p-3 rounded-lg ${msg.role === 'user' ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-800'}`}>
+              <p>{msg.content}</p>
             </div>
           </div>
         ))}
         {isLoading && (
-          <div className="my-2 flex justify-start">
-            <div className="p-3 rounded-lg max-w-lg bg-gray-200 text-gray-800">
-              <div className="flex items-center space-x-2">
-                <div className="animate-pulse bg-gray-400 rounded-full h-2 w-2"></div>
-                <div className="animate-pulse bg-gray-400 rounded-full h-2 w-2 delay-75"></div>
-                <div className="animate-pulse bg-gray-400 rounded-full h-2 w-2 delay-150"></div>
-              </div>
+          <div className="flex justify-start mb-3">
+            <div className="max-w-prose p-3 rounded-lg bg-gray-200 text-gray-800">
+              <SpinnerIcon />
             </div>
           </div>
         )}
-        <div ref={messagesEndRef} />
       </div>
-      <div className="p-4 border-t bg-white">
-        <div className="flex">
-          <input
-            type="text"
-            placeholder={isLoading ? "AIが応答中です..." : "メッセージを入力..."}
-            className="flex-1 p-2 border rounded-l-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
-            disabled={isLoading}
-          />
-          <button
-            onClick={sendMessage}
-            disabled={isLoading}
-            className="px-4 py-2 bg-blue-500 text-white rounded-r-lg font-semibold hover:bg-blue-600 disabled:bg-gray-400 disabled:cursor-not-allowed"
-          >
-            送信
-          </button>
+
+      {/* エラー表示 */}
+      {error && (
+        <div className="mb-4 p-3 bg-red-100 text-red-700 rounded-lg">
+          <p><strong>エラー:</strong> {error}</p>
         </div>
+      )}
+
+      {/* 入力フォーム */}
+      <div className="flex-shrink-0 flex">
+        <input
+          type="text"
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
+          placeholder="メッセージを入力..."
+          className="flex-grow p-3 border rounded-l-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+          disabled={isLoading}
+        />
+        <button
+          onClick={sendMessage}
+          className="bg-blue-500 text-white p-3 rounded-r-lg hover:bg-blue-600 disabled:bg-blue-300"
+          disabled={isLoading || !input.trim()}
+        >
+          {isLoading ? <SpinnerIcon /> : '送信'}
+        </button>
       </div>
     </div>
   );
