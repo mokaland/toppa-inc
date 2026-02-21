@@ -16,7 +16,7 @@ export const callAiGateway = async (prompt: string): Promise<string> => {
   // ここに実際のLLM API呼び出しコードが入る
   // 例: const response = await openai.chat.completions.create(...)
   
-  return Promise.resolve(\`## AI生成レポート（モック）
+  return Promise.resolve(`## AI生成レポート（モック）
 
   ご依頼のありましたレポートを作成しました。
 
@@ -26,5 +26,5 @@ export const callAiGateway = async (prompt: string): Promise<string> => {
 
   ### 結果
   - こちらはモック応答です。実際のAI Gatewayが実装されると、ここに分析結果が表示されます。
-  \`);
+  `);
 };
