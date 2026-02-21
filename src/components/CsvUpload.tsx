@@ -1,6 +1,6 @@
 import React, { useState, useCallback } from 'react';
 import Papa from 'papaparse';
-
+import { marked } from 'marked';
 
 const API_URL = '/api/reports/generate';
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
@@ -270,7 +270,7 @@ const CsvUpload: React.FC = () => {
       {report && (
         <div className="mt-6 p-4 bg-white border border-gray-200 rounded-lg shadow-sm">
           <h3 className="text-lg font-semibold text-gray-800 mb-2">生成されたレポート</h3>
-          <div className="prose prose-sm max-w-none p-2 bg-gray-100 rounded-md overflow-auto" dangerouslySetInnerHTML={{ __html: report }} />
+          <div className="prose prose-sm max-w-none p-2 bg-gray-100 rounded-md overflow-auto" dangerouslySetInnerHTML={{ __html: marked.parse(report) as string }} />
           <button
             onClick={handleDownloadReport}
             className="mt-4 bg-green-600 text-white font-bold py-2 px-4 rounded-md hover:bg-green-700 transition-colors"
