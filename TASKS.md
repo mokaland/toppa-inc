@@ -17,7 +17,7 @@ Content Leadはこれを受け、中断していたコンテンツ戦略を再�
 | Q1-T1 | プロダクト仕様策定 (`docs/tsumikiri/mvp-spec.md`) | Product Lead (高橋レン) | 2026-02-21 | 完了 | v1.2に更新済み |
 | Q1-T2 | 技術アーキテクチャ設計 (`docs/tsumikiri/tech-architecture.md`) | Product Lead (高橋レン) | 2026-02-18 | 完了 | GCP Cloud Function + GitHub Pages で稼働中 |
 | Q1-T3 | コンテンツ戦略 & build-in-public | Content Lead (アイシャ) | 2026-02-28 | **進行中** | プロジェクト再開 |
-| Q1-T4 | フロントエンドUI改善（実装フェーズ） | **Product Lead (高橋レン)** | 2026-03-07 | **進行中** | **CIビルド正常化。開発を本格再開。** |
+| Q1-T4 | フロントエンドUI改善（実装フェーズ） | **Product Lead (高橋レン)** | 2026-03-07 | **進行中** | **CIビルドの根本原因を修正。開発を本格再開。** |
 | Q1-T4.1 | `ChatWindow.tsx` メッセージ表示UI改善 | Product Lead (高橋レン) | 2026-02-24 | **進行中** | CIビルドが正常化したため、UI改善タスクを再開。 |
 | Q1-T4.2 | `ChatWindow.tsx` 入力フォームUI改善 | Product Lead (高橋レン) | 2026-02-25 | **進行中** | CIビルドが正常化したため、UI改善タスクを再開。 |
 | Q1-T4.3 | `CsvUpload.tsx` UI改善 | Product Lead (高橋レン) | 2026-02-28 | 未着手 | ファイル選択エリア、進捗表示 |
