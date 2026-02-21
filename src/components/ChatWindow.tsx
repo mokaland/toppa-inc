@@ -5,11 +5,12 @@ const API_URL = 'https://us-central1-gen-lang-client-0841897546.cloudfunctions.n
 interface Message {
   role: 'user' | 'assistant';
   content: string;
+  timestamp: string;
 }
 
 const ChatWindow = () => {
   const [messages, setMessages] = useState<Message[]>([
-    { role: 'assistant', content: 'こんにちは！ツミキリです。経営や事務作業のお手伝いをします。何でも聞いてください。' },
+    { role: 'assistant', content: 'こんにちは！ツミキリです。経営や事務作業のお手伝いをします。何でも聞いてください。', timestamp: new Date().toISOString() },
   ]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -29,7 +30,7 @@ const ChatWindow = () => {
       return;
     }
 
-    const newMessages: Message[] = [...messages, { role: 'user', content: input }];
+    const newMessages: Message[] = [...messages, { role: 'user', content: input, timestamp: new Date().toISOString() }];
     setMessages(newMessages);
     setInput('');
     setIsLoading(true);
@@ -53,7 +54,7 @@ const ChatWindow = () => {
       }
 
       const data = await response.json();
-      setMessages([...newMessages, { role: 'assistant', content: data.response }]);
+      setMessages([...newMessages, { role: 'assistant', content: data.response, timestamp: new Date().toISOString() }]);
     } catch (err: any) {
       setError(err.message || '不明なエラーが発生しました。');
     } finally {
@@ -66,12 +67,15 @@ const ChatWindow = () => {
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         {messages.map((msg, index) => (
           <div key={index} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-            <div className={`max-w-lg px-4 py-2 rounded-xl break-words ${
+            <div className={`max-w-lg px-4 py-2 break-words mb-2 ${
               msg.role === 'user'
-                ? 'bg-blue-500 text-white'
-                : 'bg-gray-200 text-gray-800'
+                ? 'bg-blue-500 text-white rounded-t-xl rounded-bl-xl'
+                : 'bg-gray-200 text-gray-800 rounded-t-xl rounded-br-xl'
             }`}>
               {msg.content.split('\\n').map((line, i) => <p key={i}>{line}</p>)}
+              <div className={`text-xs mt-1 ${msg.role === 'user' ? 'text-blue-200' : 'text-gray-500'}`}>
+                {new Date(msg.timestamp).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })}
+              </div>
             </div>
           </div>
         ))}
