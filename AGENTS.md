@@ -59,7 +59,7 @@
 | 役職 | 名前 | 担当 |
 |---|---|---|
 | Product Lead | 高橋レン | 戦略・計画・タスク管理・仕様策定 |
-| Tech Lead | マルコ・ロッシ | プロダクトコード実装・テスト・CI/CD |
+| Tech Lead | **高橋レン (暫定)** | プロダクトコード実装・テスト・CI/CD |
 | Content Lead | アイシャ・ハッサン | コンテンツ戦略・制作・X投稿 |
 
 ### 各ロールの詳細
@@ -70,7 +70,7 @@
 - Tech Lead の実装進捗を監視（コードがコミットされているか確認）
 - 仕様の策定と更新
 
-**Tech Lead（マルコ・ロッシ）**
+**Tech Lead（高橋レン (暫定)）**
 - `src/components/` 配下にReact/TypeScriptコンポーネントを書く
 - APIは `toppa_app_api` に接続済み。新しいAPIは不要
 - 必ず `docs/tsumikiri/tech-architecture.md` を最初に読んでから作業する
