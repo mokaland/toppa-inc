@@ -39,101 +39,130 @@ const ChatWindow = () => {
       return;
     }
 
-    const newMessages: Message[] = [...messages, { role: 'user', content: input, timestamp: new Date().toISOString() }];
+    const userMessage: Message = { role: 'user', content: input, timestamp: new Date().toISOString() };
+    const newMessages: Message[] = [...messages, userMessage];
+    
     setMessages(newMessages);
     setInput('');
     setIsLoading(true);
     setError(null);
 
     try {
-      const response = await fetch(API_URL, {
+      const res = await fetch(API_URL, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'chat',
           messages: newMessages.map(({ role, content }) => ({ role, content })),
         }),
       });
 
-      if (!response.ok) {
-        throw new Error(`APIエラー: ${response.status}`);
+      if (!res.ok) {
+        throw new Error(`APIエラー: ${res.status} ${res.statusText}`);
       }
 
-      const data = await response.json();
-      setMessages(prevMessages => [...prevMessages, { role: 'assistant', content: data.response, timestamp: new Date().toISOString() }]);
+      const data = await res.json();
+      
+      if (data.response) {
+        const assistantMessage: Message = { role: 'assistant', content: data.response, timestamp: new Date().toISOString() };
+        setMessages(prevMessages => [...prevMessages, assistantMessage]);
+      } else {
+        throw new Error('APIからのレスポンス形式が正しくありません。');
+      }
 
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : '不明なエラーが発生しました。';
-      setError(`メッセージの送信に失敗しました。詳細: ${errorMessage}`);
-      // ユーザーが入力したメッセージを復元
-      setMessages(messages);
+      setError(errorMessage);
+      const errorBotMessage: Message = { role: 'assistant', content: `申し訳ありません、エラーが発生しました。時間を置いて再度お試しください。(詳細: ${errorMessage})`, timestamp: new Date().toISOString() };
+      setMessages(prevMessages => [...prevMessages, errorBotMessage]);
     } finally {
       setIsLoading(false);
     }
   };
 
-  const handleKeyPress = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      handleSendMessage();
-    }
-  };
-
   return (
-    <div className="flex flex-col h-[calc(100vh-120px)] bg-gray-50 rounded-lg shadow-inner">
+    <div className="flex flex-col h-[calc(100vh-120px)] bg-gray-50">
+      {/* Messages display area */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        {messages.map((message, index) => (
-          <div key={index} className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-            <div className={`max-w-xl lg:max-w-2xl px-4 py-2 rounded-2xl ${message.role === 'user' ? 'bg-blue-500 text-white' : 'bg-white text-gray-800 shadow-sm'}`}>
-              <p className="whitespace-pre-wrap">{message.content}</p>
+        {messages.map((msg, index) => (
+          <div key={index} className={`flex items-end gap-2 ${msg.role === 'user' ? 'justify-end' : ''}`}>
+            
+            {msg.role === 'assistant' && (
+              <div className="w-8 h-8 rounded-full bg-gray-700 flex items-center justify-center text-white text-sm font-bold flex-shrink-0">
+                AI
+              </div>
+            )}
+
+            <div className={`max-w-xl p-3 rounded-lg shadow-md ${msg.role === 'user' ? 'bg-blue-500 text-white' : 'bg-white text-gray-800'}`}>
+              <p className="text-sm" style={{ whiteSpace: 'pre-wrap' }}>{msg.content}</p>
+              <div className={`text-xs text-right mt-1 ${msg.role === 'user' ? 'text-blue-200' : 'text-gray-400'}`}>
+                {new Date(msg.timestamp).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })}
+              </div>
             </div>
+
+            {msg.role === 'user' && (
+              <div className="w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center text-white text-sm font-bold flex-shrink-0">
+                You
+              </div>
+            )}
           </div>
         ))}
-         {isLoading && (
-          <div className="flex justify-start">
-            <div className="max-w-lg px-4 py-3 rounded-lg bg-white text-gray-800 shadow-sm flex items-center">
-                <div className="animate-pulse flex space-x-2">
-                    <div className="rounded-full bg-gray-300 h-2 w-2"></div>
-                    <div className="rounded-full bg-gray-300 h-2 w-2"></div>
-                    <div className="rounded-full bg-gray-300 h-2 w-2"></div>
-                </div>
+
+        {isLoading && (
+          <div className="flex items-end gap-2">
+            <div className="w-8 h-8 rounded-full bg-gray-700 flex items-center justify-center text-white text-sm font-bold flex-shrink-0">
+              AI
             </div>
+            <div className="max-w-xl p-3 rounded-lg shadow-md bg-white text-gray-800">
+              <div className="flex items-center">
+                <div className="dot-flashing"></div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {error && (
+           <div className="p-4 mb-4 text-sm text-red-800 rounded-lg bg-red-50" role="alert">
+            <span className="font-medium">エラー:</span> {error}
           </div>
         )}
         <div ref={messagesEndRef} />
       </div>
 
-      {error && (
-        <div className="p-2 text-center text-red-500 bg-red-100 border-t border-red-200">
-          <p>{error}</p>
-        </div>
-      )}
-
+      {/* Input form area */}
       <div className="p-4 bg-white border-t border-gray-200">
         <div className="relative">
           <textarea
+            className="w-full p-2 pr-20 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 transition"
+            rows={2}
+            placeholder="メッセージを入力..."
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            onKeyPress={handleKeyPress}
-            placeholder="メッセージを入力... (Shift+Enterで改行)"
-            className="w-full p-3 pr-28 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none resize-none"
-            rows={1}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                handleSendMessage();
+              }
+            }}
             disabled={isLoading}
           />
           <button
             onClick={handleSendMessage}
             disabled={isLoading || input.trim() === ''}
-            className={`absolute right-2.5 top-1/2 -translate-y-1/2 flex items-center justify-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors duration-200`}
+            className={`absolute right-2.5 bottom-2.5 bg-blue-500 text-white font-bold py-2 px-4 rounded-lg flex items-center
+                        ${isLoading ? 'bg-blue-300 cursor-not-allowed' : 'hover:bg-blue-600'}
+                        ${input.trim() === '' ? 'bg-gray-300 cursor-not-allowed' : ''}
+                        transition-colors duration-200`}
           >
             {isLoading ? (
               <>
                 <LoadingSpinner />
-                <span>送信中...</span>
+                <span>送信中</span>
               </>
             ) : (
-              '送信'
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                <path d="M10.894 2.553a1 1 0 00-1.788 0l-7 14a1 1 0 001.169 1.409l5-1.429A1 1 0 009 15.571V11a1 1 0 112 0v4.571a1 1 0 00.725.962l5 1.428a1 1 0 001.17-1.408l-7-14z" />
+              </svg>
             )}
           </button>
         </div>
