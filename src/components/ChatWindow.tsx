@@ -49,76 +49,81 @@ const ChatWindow = () => {
       });
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ message: 'サーバーから有効なエラーレスポンスがありませんでした。' }));
-        throw new Error(errorData.message || `HTTPエラー: ${response.status}`);
+        throw new Error(`APIエラー: ${response.status}`);
       }
 
       const data = await response.json();
       setMessages([...newMessages, { role: 'assistant', content: data.response, timestamp: new Date().toISOString() }]);
-    } catch (err: any) {
-      setError(err.message || '不明なエラーが発生しました。');
+    } catch (e) {
+      const errorMessage = e instanceof Error ? e.message : '不明なエラーが発生しました。';
+      setError(errorMessage);
+      // 元のメッセージリストに戻す
+      setMessages(messages);
     } finally {
       setIsLoading(false);
     }
   };
 
   return (
-    <div className="flex flex-col h-[calc(100vh-200px)] bg-gray-50 rounded-lg shadow-inner">
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        {messages.map((msg, index) => (
-          <div key={index} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-            <div className={`max-w-lg px-4 py-2 break-words mb-2 ${
-              msg.role === 'user'
-                ? 'bg-blue-500 text-white rounded-t-xl rounded-bl-xl'
-                : 'bg-gray-200 text-gray-800 rounded-t-xl rounded-br-xl'
-            }`}>
-              {msg.content.split('\\n').map((line, i) => <p key={i}>{line}</p>)}
-              <div className={`text-xs mt-1 ${msg.role === 'user' ? 'text-blue-200' : 'text-gray-500'}`}>
-                {new Date(msg.timestamp).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })}
+    <div className="flex flex-col h-[calc(100vh-200px)] bg-white rounded-lg shadow-md">
+      <div className="flex-1 overflow-y-auto p-6 space-y-6">
+        {messages.map((msg, index) => {
+          const isUser = msg.role === 'user';
+          return (
+            <div key={index} className={`flex items-start gap-3 ${isUser ? 'flex-row-reverse' : ''}`}>
+              <div className={`flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center ${isUser ? 'bg-blue-500' : 'bg-gray-700'}`}>
+                {isUser ? (
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                  </svg>
+                ) : (
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                  </svg>
+                )}
+              </div>
+              <div className={`max-w-md lg:max-w-2xl p-3 rounded-lg shadow ${isUser ? 'bg-blue-100' : 'bg-gray-100'}`}>
+                <p className="text-sm text-gray-800 whitespace-pre-wrap">{msg.content}</p>
+                <p className={`text-xs text-gray-500 mt-1 ${isUser ? 'text-left' : 'text-right'}`}>{new Date(msg.timestamp).toLocaleTimeString()}</p>
               </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
         {isLoading && (
-          <div className="flex justify-start">
-            <div className="max-w-lg px-4 py-2 rounded-xl bg-gray-200 text-gray-800">
-              <div className="flex items-center space-x-2">
-                <div className="w-2 h-2 bg-gray-500 rounded-full animate-pulse" style={{ animationDelay: '0s' }}></div>
-                <div className="w-2 h-2 bg-gray-500 rounded-full animate-pulse" style={{ animationDelay: '0.1s' }}></div>
-                <div className="w-2 h-2 bg-gray-500 rounded-full animate-pulse" style={{ animationDelay: '0.2s' }}></div>
-              </div>
+          <div className="flex items-start gap-3">
+            <div className="flex-shrink-0 w-10 h-10 bg-gray-700 rounded-full flex items-center justify-center animate-pulse">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+              </svg>
+            </div>
+            <div className="max-w-md p-3 bg-gray-100 rounded-lg shadow">
+              <p className="text-sm text-gray-500">AIが応答を生成中...</p>
             </div>
           </div>
-        )}
-        {error && (
-           <div className="flex justify-center">
-             <div className="max-w-lg w-full px-4 py-3 rounded-xl bg-red-100 text-red-700">
-               <strong>エラー:</strong> {error}
-             </div>
-           </div>
         )}
         <div ref={messagesEndRef} />
       </div>
-      <div className="p-4 bg-white border-t">
+      {error && <div className="p-3 bg-red-100 text-red-700 text-sm">{error}</div>}
+      <div className="p-4 border-t">
         <div className="flex items-center space-x-2">
           <textarea
+            className="flex-1 p-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none resize-none"
+            placeholder="メッセージを入力..."
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            onKeyPress={(e) => {
+            onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
                 handleSendMessage();
               }
             }}
-            placeholder="メッセージを入力... (Shift+Enterで改行)"
-            className="flex-1 p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
-            rows={1}
+            rows={2}
             disabled={isLoading}
           />
           <button
             onClick={handleSendMessage}
-            className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:bg-blue-300 disabled:cursor-not-allowed self-end"
             disabled={isLoading}
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-blue-300 transition-colors"
           >
             送信
           </button>
