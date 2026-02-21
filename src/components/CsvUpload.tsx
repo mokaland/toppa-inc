@@ -1,7 +1,6 @@
 import React, { useState, useCallback } from 'react';
 import Papa from 'papaparse';
 import { useDropzone } from 'react-dropzone';
-import { marked } from 'marked';
 
 // Correct API endpoint as verified.
 const API_URL = 'https://us-central1-gen-lang-client-0841897546.cloudfunctions.net/toppa_app_api';
@@ -27,17 +26,23 @@ const CsvUpload: React.FC = () => {
   const [instructions, setInstructions] = useState<string>('');
   const [report, setReport] = useState<string>('');
   const [isLoading, setIsLoading] = useState<boolean>(false);
-  const [error, setError] = useState<string>('');
-  const [preview, setPreview] = useState<string[][]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [csvPreview, setCsvPreview] = useState<string[][]>([]);
 
-  const onDrop = useCallback((acceptedFiles: File[], rejectedFiles: unknown[]) => {
-    setError('');
+  const onDrop = useCallback((acceptedFiles: File[], fileRejections: any[]) => {
+    setError(null);
     setFile(null);
-    setPreview([]);
-    setReport('');
+    setCsvPreview([]);
 
-    if (rejectedFiles.length > 0) {
-      setError('ファイル形式が不正か、ファイルサイズが大きすぎます。CSVファイル (5MB以下) を選択してください。');
+    if (fileRejections.length > 0) {
+      const firstError = fileRejections[0].errors[0];
+      if (firstError.code === 'file-too-large') {
+        setError(`ファイルサイズは${MAX_FILE_SIZE / 1024 / 1024}MB以下にしてください。`);
+      } else if (firstError.code === 'file-invalid-type') {
+        setError('対応しているファイル形式はCSVのみです。');
+      } else {
+        setError('無効なファイルです。');
+      }
       return;
     }
 
@@ -45,18 +50,17 @@ const CsvUpload: React.FC = () => {
       const acceptedFile = acceptedFiles[0];
       setFile(acceptedFile);
 
-      // --- CSV Preview Logic ---
+      // CSVプレビュー生成
       Papa.parse(acceptedFile, {
         header: true,
         preview: 5,
         complete: (results) => {
-          const headerRow = results.meta.fields ? [results.meta.fields] : [];
-          const dataRows = results.data as unknown[];
-          const previewData = headerRow.concat(dataRows.map(row => Object.values(row as Record<string, string>)));
-          setPreview(previewData as string[][]);
+          const headers = results.meta.fields || [];
+          const data = results.data as any[];
+          setCsvPreview([headers, ...data.map(row => headers.map(h => row[h]))]);
         },
         error: () => {
-          setError('CSVファイルのプレビューに失敗しました。ファイルが破損している可能性があります。');
+          setError('CSVファイルの読み込みに失敗しました。');
         }
       });
     }
@@ -69,31 +73,29 @@ const CsvUpload: React.FC = () => {
     multiple: false,
   });
 
-  const handleGenerateReport = async () => {
+  const handleSubmit = async () => {
     if (!file || !instructions) {
-      setError('CSVファイルを選択し、分析指示を入力してください。');
+      setError('CSVファイルを選択し、指示を入力してください。');
       return;
     }
+
     setIsLoading(true);
-    setError('');
+    setError(null);
     setReport('');
 
-    const reader = new FileReader();
-    reader.onload = async (event) => {
-      const csvData = event.target?.result as string;
+    try {
+      const reader = new FileReader();
+      reader.onload = async (event) => {
+        const csvData = event.target?.result as string;
+        if (!csvData) {
+          setError('CSVファイルの内容を読み取れませんでした。');
+          setIsLoading(false);
+          return;
+        }
 
-      if (!csvData) {
-        setError('ファイルの読み込みに失敗しました。');
-        setIsLoading(false);
-        return;
-      }
-
-      try {
         const response = await fetch(API_URL, {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             action: 'report',
             csv_data: csvData,
@@ -102,142 +104,104 @@ const CsvUpload: React.FC = () => {
         });
 
         if (!response.ok) {
-          throw new Error(`APIエラー: ${response.status} ${response.statusText}`);
+          const errorData = await response.json().catch(() => ({ message: 'サーバーから不明なエラーが返されました。' }));
+          throw new Error(errorData.message || `サーバーエラー: ${response.status}`);
         }
 
-        const data = await response.json();
-        
-        if (data.report) {
-          const reportHtml = marked.parse(data.report);
-          setReport(reportHtml as string);
-        } else {
-            throw new Error('APIからのレスポンスにレポートが含まれていません。');
-        }
+        const result = await response.json();
+        setReport(result.report || 'レポートが生成されませんでした。');
+      };
+      reader.onerror = () => {
+          setError('ファイルの読み込み中にエラーが発生しました。');
+          setIsLoading(false);
+      };
+      reader.readAsText(file);
 
-      } catch (err: unknown) {
-        setError((err as Error).message || 'レポートの生成中に不明なエラーが発生しました。');
-      } finally {
-        setIsLoading(false);
-      }
-    };
-    reader.onerror = () => {
-        setError('ファイルの読み込み中にエラーが発生しました。');
-        setIsLoading(false);
-    };
-    reader.readAsText(file);
+    } catch (err: any) {
+      setError(err.message || 'レポートの生成中に予期せぬエラーが発生しました。');
+    } finally {
+      setIsLoading(false);
+    }
   };
-  
-  const handleDownload = () => {
-    if (!report) return;
-    const blob = new Blob([report], { type: 'text/markdown;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'report.md';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  };
-
 
   return (
-    <div className="p-6 bg-gray-50 min-h-screen">
-      <div className="max-w-4xl mx-auto">
-        <h1 className="text-3xl font-bold text-gray-800 mb-2">AIレポート生成</h1>
-        <p className="text-gray-600 mb-6">CSVファイルをアップロードし、自然言語で指示するだけで、AIが分析レポートを自動生成します。</p>
+    <div className="p-6 bg-white rounded-lg shadow-md">
+      <h2 className="text-2xl font-bold text-gray-800 mb-4">AIレポート生成</h2>
+      <p className="text-gray-600 mb-6">CSVファイルをアップロードし、分析や要約の指示を出すと、AIがレポートを自動生成します。</p>
 
-        {/* --- Step 1: Upload --- */}
-        <div className="bg-white p-6 rounded-lg shadow-md mb-6">
-          <h2 className="text-xl font-semibold text-gray-700 mb-4">Step 1: CSVファイルをアップロード</h2>
-          <div
-            {...getRootProps()}
-            className={`border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors ${
-              isDragActive ? 'border-blue-500 bg-blue-50' : 'border-gray-300 hover:border-gray-400'
-            }`}
-          >
-            <input {...getInputProps()} />
-            <div className="flex flex-col items-center">
-              <CsvIcon />
-              {isDragActive ? (
-                <p className="mt-2 text-gray-600">ここにファイルをドロップ</p>
-              ) : (
-                <p className="mt-2 text-gray-600">ここにCSVファイルをドラッグ＆ドロップするか、クリックして選択</p>
-              )}
-              <p className="text-sm text-gray-500 mt-1">ファイルサイズは5MBまで</p>
-            </div>
-          </div>
-          {file && (
-            <div className="mt-4 p-4 bg-gray-100 rounded-md">
-              <p className="font-semibold text-gray-800">選択されたファイル: {file.name}</p>
-              {preview.length > 0 && (
-                 <div className="mt-2 overflow-x-auto">
-                    <table className="w-full text-sm text-left text-gray-500">
-                        <thead className="text-xs text-gray-700 uppercase bg-gray-200">
-                            <tr>{preview[0].map((header, i) => <th key={i} className="px-4 py-2">{header}</th>)}</tr>
+      {/* Step 1: File Upload */}
+      <div {...getRootProps()} className={`p-8 border-2 border-dashed rounded-lg text-center cursor-pointer transition-colors ${isDragActive ? 'border-blue-500 bg-blue-50' : 'border-gray-300 hover:border-blue-400'}`}>
+        <input {...getInputProps()} />
+        <div className="flex flex-col items-center">
+          <CsvIcon />
+          {isDragActive ?
+            <p className="mt-2 text-blue-600 font-semibold">ここにファイルをドロップ</p> :
+            <p className="mt-2 text-gray-600">CSVファイルをドラッグ＆ドロップするか、<span className="font-semibold text-blue-600">クリックして選択</span></p>
+          }
+          <p className="text-xs text-gray-500 mt-1">最大ファイルサイズ: {MAX_FILE_SIZE / 1024 / 1024}MB</p>
+        </div>
+      </div>
+
+      {file && (
+        <div className="mt-4 p-3 bg-gray-50 rounded-md border">
+            <p className="text-sm font-medium text-gray-700">選択されたファイル: <span className="font-normal">{file.name}</span></p>
+             {csvPreview.length > 0 && (
+                <div className="mt-2 text-xs text-gray-500 overflow-x-auto">
+                    <table className="table-auto w-full">
+                        <thead>
+                            <tr className="bg-gray-200">
+                                {csvPreview[0].map((header, i) => <th key={i} className="px-2 py-1 text-left">{header}</th>)}
+                            </tr>
                         </thead>
                         <tbody>
-                            {preview.slice(1).map((row, i) => (
-                                <tr key={i} className="bg-white border-b">
-                                    {row.map((cell, j) => <td key={j} className="px-4 py-2">{cell}</td>)}
+                            {csvPreview.slice(1).map((row, i) => (
+                                <tr key={i} className="border-t">
+                                    {row.map((cell, j) => <td key={j} className="px-2 py-1">{cell}</td>)}
                                 </tr>
                             ))}
                         </tbody>
                     </table>
-                 </div>
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* --- Step 2: Instructions --- */}
-        <div className="bg-white p-6 rounded-lg shadow-md mb-6">
-            <h2 className="text-xl font-semibold text-gray-700 mb-4">Step 2: AIへの指示を入力</h2>
-            <textarea
-                value={instructions}
-                onChange={(e) => setInstructions(e.target.value)}
-                placeholder="例: 部門別の売上を分析して、改善提案をまとめてください。"
-                className="w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition"
-                rows={4}
-            />
-        </div>
-
-        {/* --- Step 3: Generate --- */}
-        <div className="text-center mb-6">
-            <button
-                onClick={handleGenerateReport}
-                disabled={!file || !instructions || isLoading}
-                className="w-full max-w-xs px-6 py-3 text-white font-semibold bg-blue-600 rounded-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-transform transform hover:scale-105 flex items-center justify-center mx-auto"
-            >
-                {isLoading ? <SpinnerIcon /> : null}
-                {isLoading ? 'レポートを生成中...' : 'レポートを生成する'}
-            </button>
-        </div>
-        
-        {error && <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-md mb-6" role="alert">{error}</div>}
-
-        {/* --- Step 4: Result --- */}
-        {(isLoading || report) && (
-            <div className="bg-white p-6 rounded-lg shadow-md">
-                <div className="flex justify-between items-center mb-4">
-                    <h2 className="text-xl font-semibold text-gray-700">生成されたレポート</h2>
-                    {report && !isLoading && (
-                        <button 
-                            onClick={handleDownload}
-                            className="px-4 py-2 text-sm font-medium text-blue-600 border border-blue-600 rounded-md hover:bg-blue-50 transition"
-                        >
-                            Markdownをダウンロード
-                        </button>
-                    )}
                 </div>
-                {isLoading && !report && <p className="text-gray-600">AIがレポートを生成しています。しばらくお待ちください...</p>}
-                <div
-                    className="prose max-w-none"
-                    dangerouslySetInnerHTML={{ __html: report }}
-                />
-            </div>
-        )}
+            )}
+        </div>
+      )}
+
+      {/* Step 2: Instructions */}
+      <div className="mt-6">
+        <label htmlFor="instructions" className="block text-sm font-medium text-gray-700 mb-2">指示内容</label>
+        <textarea
+          id="instructions"
+          rows={4}
+          className="w-full p-3 border border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500"
+          placeholder="例: 部門別の売上を降順で集計し、最も貢献度の高い部門について考察してください。"
+          value={instructions}
+          onChange={(e) => setInstructions(e.target.value)}
+          disabled={isLoading}
+        />
       </div>
+
+      {error && <p className="mt-4 text-sm text-red-600 bg-red-50 p-3 rounded-md">{error}</p>}
+
+      {/* Step 3: Generate Button */}
+      <div className="mt-6">
+        <button
+          onClick={handleSubmit}
+          disabled={isLoading || !file || !instructions}
+          className="w-full flex justify-center items-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:bg-gray-400 disabled:cursor-not-allowed"
+        >
+          {isLoading ? <><SpinnerIcon /> 生成中...</> : 'レポートを生成する'}
+        </button>
+      </div>
+
+      {/* Step 4: Display Report */}
+      {report && !isLoading && (
+         <div className="mt-8">
+            <h3 className="text-xl font-semibold text-gray-800 mb-3">生成されたレポート</h3>
+            <div className="p-4 bg-gray-50 rounded-lg border overflow-x-auto">
+              <pre className="text-sm whitespace-pre-wrap"><code>{report}</code></pre>
+            </div>
+        </div>
+      )}
     </div>
   );
 };
