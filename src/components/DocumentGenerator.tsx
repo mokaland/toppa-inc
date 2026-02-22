@@ -1,4 +1,5 @@
 import { useState, useCallback } from 'react';
+import { marked } from 'marked';
 
 const API_URL = 'https://us-central1-gen-lang-client-0841897546.cloudfunctions.net/toppa_app_api';
 
@@ -135,9 +136,7 @@ const DocumentGenerator = () => {
         {document && (
           <div>
             <h3 className="text-xl font-semibold mb-2 text-gray-700">生成された書類</h3>
-            <pre className="bg-gray-50 p-4 rounded-md whitespace-pre-wrap font-mono text-sm overflow-x-auto">
-              {document}
-            </pre>
+            <div className="prose prose-sm max-w-none p-2 bg-gray-100 rounded-md overflow-auto" dangerouslySetInnerHTML={{ __html: marked.parse(document) as string }} />
           </div>
         )}
       </div>
