@@ -38,7 +38,7 @@ report.post('/generate', async (c) => {
 
   } catch (error) {
     console.error('Gemini API request failed:', error);
-    return c.json({ error: 'AIレポートの生成中にエラーが発生しました。' }, 500);
+    return c.json({ error: 'レポートの生成に失敗しました。もう一度お試しください' }, 500);
   }
 });
 

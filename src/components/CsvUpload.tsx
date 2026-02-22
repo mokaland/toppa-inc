@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import Papa from 'papaparse';
 import { marked } from 'marked';
 
@@ -27,6 +27,41 @@ const CsvUpload: React.FC = () => {
   const [error, setError] = useState<string>('');
   const [fileName, setFileName] = useState<string>('');
   const [csvPreview, setCsvPreview] = useState<string[][] | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleDragOver = useCallback((event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    // Optional: Add some visual feedback for drag over
+  }, []);
+
+  const handleDragLeave = useCallback((event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    // Optional: Remove visual feedback
+  }, []);
+
+  const handleDrop = useCallback((event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    setError('');
+    setFile(null);
+    setCsvPreview(null);
+    setFileName('');
+    setReport('');
+
+    const droppedFile = event.dataTransfer.files?.[0];
+
+    if (!droppedFile) {
+        return;
+    }
+
+    // Simulate change event for handleFileChange
+    const dataTransfer = new DataTransfer();
+    dataTransfer.items.add(droppedFile);
+    if (fileInputRef.current) {
+        fileInputRef.current.files = dataTransfer.files;
+        const changeEvent = new Event('change', { bubbles: true });
+        fileInputRef.current.dispatchEvent(changeEvent);
+    }
+  }, []);
 
   const handleFileChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
     setError('');
@@ -47,7 +82,7 @@ const CsvUpload: React.FC = () => {
     }
 
     if (selectedFile.size > MAX_FILE_SIZE) {
-      setError(`ファイルサイズが5MBを超えています: ${(selectedFile.size / 1024 / 1024).toFixed(2)}MB`);
+      setError('ファイルサイズは5MB以下にしてください');
       return;
     }
 
@@ -71,8 +106,12 @@ const CsvUpload: React.FC = () => {
   }, []);
 
   const handleGenerateReport = async () => {
-    if (!file || !instructions) {
-      setError('CSVファイルを選択し、分析指示を入力してください。');
+    if (!file) {
+      setError('CSVファイルを選択してください。');
+      return;
+    }
+    if (!instructions) {
+      setError('分析指示を入力してください。');
       return;
     }
     setIsLoading(true);
@@ -115,7 +154,7 @@ const CsvUpload: React.FC = () => {
         }
 
       } catch (err: any) {
-        setError(err.message || 'レポートの生成中に不明なエラーが発生しました。');
+        setError('レポートの生成に失敗しました。もう一度お試しください');
       } finally {
         setIsLoading(false);
       }
@@ -133,7 +172,8 @@ const CsvUpload: React.FC = () => {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'report.md';
+    const baseFileName = fileName.replace(/\.[^/.]+$/, ""); // Remove extension
+    a.download = `${baseFileName}-report.md`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -152,9 +192,12 @@ const CsvUpload: React.FC = () => {
           <h2 className="text-xl font-semibold text-gray-700 mb-4">Step 1: CSVファイルをアップロード</h2>
           <div
             className="border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors border-gray-300 hover:border-gray-400"
-            onClick={() => document.getElementById('file-upload')?.click()}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+            onClick={() => fileInputRef.current?.click()}
           >
-            <input id="file-upload" type="file" accept=".csv" className="hidden" onChange={handleFileChange} />
+            <input id="file-upload" type="file" accept=".csv" className="hidden" onChange={handleFileChange} ref={fileInputRef} />
             <div className="flex flex-col items-center">
               <CsvIcon />
               {fileName ? (
