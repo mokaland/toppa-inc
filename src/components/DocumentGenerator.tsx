@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react';
 import { marked } from 'marked';
 
-const API_URL = 'https://us-central1-gen-lang-client-0841897546.cloudfunctions.net/toppa_app_api';
+const API_URL = import.meta.env.VITE_API_URL;
 
 /**
  * ローディング状態を示すスピナーコンポーネント
