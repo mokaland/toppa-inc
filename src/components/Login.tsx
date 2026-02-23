@@ -12,8 +12,8 @@ const Login: React.FC = () => {
     setError(null);
     try {
       await login(email, password);
-    } catch (err: any) {
-      setError(err.message || 'ログインに失敗しました。');
+    } catch (err: unknown) {
+      setError((err instanceof Error) ? err.message : 'ログインに失敗しました。');
     }
   };
 

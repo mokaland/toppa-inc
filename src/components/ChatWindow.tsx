@@ -55,8 +55,8 @@ const ChatWindow: React.FC = () => {
       } else {
         throw new Error('APIからのレスポンスにコンテンツが含まれていません。');
       }
-    } catch (e: any) {
-      setError(e.message || 'メッセージの送信中に不明なエラーが発生しました。');
+    } catch (e: unknown) {
+      setError((e instanceof Error) ? e.message : 'メッセージの送信中に不明なエラーが発生しました。');
       setMessages(messages); // Restore previous messages on error
     } finally {
       setIsLoading(false);

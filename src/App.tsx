@@ -35,7 +35,7 @@ function App() {
         <div className="max-w-5xl mx-auto px-4 py-4 flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold text-gray-800 tracking-tight">ツミキリ</h1>
-            <p className="text-gray-500 text-sm">中小企業の"詰み"をAIで突破する</p>
+            <p className="text-gray-500 text-sm">中小企業の&quot;詰み&quot;をAIで突破する</p>
           </div>
         </div>
       </header>

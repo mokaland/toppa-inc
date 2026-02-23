@@ -1,6 +1,6 @@
 
 // src/api/authClient.ts
-import { createClient, SupabaseClient } from '@supabase/supabase-js';
+
 
 const supabaseUrl: string = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey: string = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -20,7 +20,11 @@ try {
  * @param password - ユーザーのパスワード
  * @returns ユーザーセッションまたはエラー
  */
-export async function signUp(email: string, password: string): Promise<any> {
+import { createClient, SupabaseClient, AuthResponse, Session } from '@supabase/supabase-js';
+
+// ... (rest of the file)
+
+export async function signUp(email: string, password: string): Promise<AuthResponse['data']> {
   try {
     const { data, error } = await supabase.auth.signUp({
       email,
@@ -40,7 +44,7 @@ export async function signUp(email: string, password: string): Promise<any> {
  * @param password - ユーザーのパスワード
  * @returns ユーザーセッションまたはエラー
  */
-export async function signIn(email: string, password: string): Promise<any> {
+export async function signIn(email: string, password: string): Promise<AuthResponse['data']> {
   try {
     const { data, error } = await supabase.auth.signInWithPassword({
       email,
@@ -58,7 +62,7 @@ export async function signIn(email: string, password: string): Promise<any> {
  * 現在のユーザーセッションを取得します。
  * @returns ユーザーセッションまたはnull
  */
-export async function getSession(): Promise<any | null> {
+export async function getSession(): Promise<Session | null> {
   try {
     const { data: { session }, error } = await supabase.auth.getSession();
     if (error) throw error;
@@ -73,7 +77,7 @@ export async function getSession(): Promise<any | null> {
  * ユーザーをログアウトさせます。
  * @returns 成功またはエラー
  */
-export async function signOut(): Promise<any> {
+export async function signOut(): Promise<{ success: boolean }> {
   try {
     const { error } = await supabase.auth.signOut();
     if (error) throw error;

@@ -94,11 +94,11 @@ const CsvUpload: React.FC = () => {
       preview: 5,
       complete: (results) => {
         const headerRow = results.meta.fields ? [results.meta.fields] : [];
-        const dataRows = results.data as any[];
+        const dataRows = results.data as Record<string, string>[];
         const previewData = headerRow.concat(dataRows.map(row => Object.values(row)));
-        setCsvPreview(previewData as string[][]);
+        setCsvPreview(previewData);
       },
-      error: (err: any) => {
+      error: (err: { message: string }) => {
         setError(`CSVプレビューの読み込み中にエラーが発生しました: ${err.message}`);
         setCsvPreview(null);
       }
@@ -147,14 +147,14 @@ const CsvUpload: React.FC = () => {
         const data = await response.json();
         
         if (data.report) {
-          const reportHtml = marked.parse(data.report);
-          setReport(reportHtml as string);
+          const reportHtml = await marked.parse(data.report);
+          setReport(reportHtml);
         } else {
             throw new Error('APIからのレスポンスにレポートが含まれていません。');
         }
 
-      } catch (err: any) {
-        setError('レポートの生成に失敗しました。もう一度お試しください');
+      } catch (err: unknown) {
+        setError((err instanceof Error) ? err.message : 'レポートの生成に失敗しました。もう一度お試しください');
       } finally {
         setIsLoading(false);
       }

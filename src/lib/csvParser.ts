@@ -6,7 +6,13 @@
  * @param csvString - CSV形式の文字列
  * @returns パース結果を含むPromise
  */
-export const parseCsv = (csvString: string): Promise<{ data: Record<string, string>[]; errors: any[] }> => {
+interface CsvParseError {
+  code: string;
+  message: string;
+  row: number;
+}
+
+export const parseCsv = (csvString: string): Promise<{ data: Record<string, string>[]; errors: CsvParseError[] }> => {
   return new Promise((resolve) => {
     const lines = csvString.trim().split('\n').filter(line => line.trim() !== '');
     
@@ -17,7 +23,7 @@ export const parseCsv = (csvString: string): Promise<{ data: Record<string, stri
 
     const header = lines[0].split(',').map(h => h.trim());
     const data: Record<string, string>[] = [];
-    const errors: any[] = [];
+    const errors: CsvParseError[] = [];
 
     for (let i = 1; i < lines.length; i++) {
       const values = lines[i].split(',').map(v => v.trim());

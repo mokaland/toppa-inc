@@ -55,7 +55,7 @@ app.post('/api/chat', async (c) => {
   try {
     const chatCompletion = await openai.chat.completions.create({
       model: 'gpt-4o', // または 'gpt-3.5-turbo', 'claude-3-opus-20240229' など
-      messages: messages as any, // 型を調整
+      messages: messages, // 型を調整
     });
 
     const aiResponseContent = chatCompletion.choices[0].message?.content || '応答なし';
