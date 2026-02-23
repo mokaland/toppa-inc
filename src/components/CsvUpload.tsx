@@ -2,7 +2,7 @@ import React, { useState, useCallback, useRef } from 'react';
 import Papa from 'papaparse';
 import { marked } from 'marked';
 
-const API_URL = 'https://us-central1-gen-lang-client-0841897546.cloudfunctions.net/toppa_app_api'; // Cloud Function API endpoint as per tech-architecture.md
+const API_URL = import.meta.env.VITE_API_BASE_URL ? `${import.meta.env.VITE_API_BASE_URL}/api/reports/generate` : 'http://localhost:8787/api/reports/generate'; // Local API endpoint
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
 // --- Icon Components (unchanged) ---
 const CsvIcon = () => (
@@ -135,9 +135,8 @@ const CsvUpload: React.FC = () => {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            action: 'report',
-            csv_data: csvData,
-            instructions: instructions,
+            csvData: csvData,
+            userInstruction: instructions,
           }),
         });
 
