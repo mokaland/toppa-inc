@@ -45,6 +45,12 @@ const DocumentGenerator = () => {
    * useCallbackを使用して、不要な再レンダリングを防ぐ。
    */
   const generate = useCallback(async () => {
+    // バリデーション: API_URLが設定されているか確認
+    if (!API_URL) {
+      setError('APIエンドポイントが設定されていません。開発者に連絡してください。');
+      return;
+    }
+
     // バリデーション: 指示が入力されているか確認
     if (!description) {
       setError('指示を入力してください');
