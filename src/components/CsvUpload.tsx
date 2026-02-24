@@ -2,7 +2,8 @@ import React, { useState, useCallback, useRef } from 'react';
 import Papa from 'papaparse';
 import { marked } from 'marked';
 
-const REPORT_GENERATION_API_URL = import.meta.env.VITE_API_BASE_URL ? `${import.meta.env.VITE_API_BASE_URL}/api/reports/generate` : 'http://localhost:8787/api/reports/generate'; // Local API endpoint for report generation
+const CSV_UPLOAD_API_URL = import.meta.env.VITE_API_BASE_URL ? `${import.meta.env.VITE_API_BASE_URL}/api/csv/upload` : 'http://localhost:8787/api/csv/upload'; // Local API endpoint for CSV upload
+const REPORT_GENERATION_API_URL = import.meta.env.VITE_API_BASE_URL ? `${import.meta.env.VITE_API_BASE_URL}/api/reports/generate` : 'http://localhost:8787/api/reports/generate';
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
 // --- Icon Components (unchanged) ---
 const CsvIcon = () => (
@@ -119,26 +120,48 @@ const CsvUpload: React.FC = () => {
     setReport('');
 
     try {
+      // Step 1: Upload CSV file
       const formData = new FormData();
       formData.append('file', file);
-      formData.append('userInstruction', instructions);
 
-      const reportResponse = await fetch(REPORT_GENERATION_API_URL, {
+      const uploadResponse = await fetch(CSV_UPLOAD_API_URL, {
         method: 'POST',
         body: formData,
       });
 
-      if (!reportResponse.ok) {
-        // Try to parse error message from backend if available
-        const errorBody = await reportResponse.json().catch(() => null);
-        const backendErrorMessage = errorBody?.error || `APIエラー: ${reportResponse.status} ${reportResponse.statusText}`;
+      if (!uploadResponse.ok) {
+        const errorBody = await uploadResponse.json().catch(() => null);
+        const backendErrorMessage = errorBody?.error || `CSVアップロードAPIエラー: ${uploadResponse.status} ${uploadResponse.statusText}`;
         throw new Error(backendErrorMessage);
       }
 
-      const data = await reportResponse.json();
+      const uploadData = await uploadResponse.json();
+      if (!uploadData.data) {
+        throw new Error('CSVデータの処理に失敗しました。');
+      }
 
-      if (data.report) {
-        const reportHtml = await marked.parse(data.report);
+      // Step 2: Generate Report using uploaded CSV data and user instructions
+      const reportResponse = await fetch(REPORT_GENERATION_API_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          csvData: uploadData.data, // Assuming backend returns processed CSV data
+          userInstruction: instructions,
+        }),
+      });
+
+      if (!reportResponse.ok) {
+        const errorBody = await reportResponse.json().catch(() => null);
+        const backendErrorMessage = errorBody?.error || `レポート生成APIエラー: ${reportResponse.status} ${reportResponse.statusText}`;
+        throw new Error(backendErrorMessage);
+      }
+
+      const reportData = await reportResponse.json();
+
+      if (reportData.report) {
+        const reportHtml = await marked.parse(reportData.report);
         setReport(reportHtml);
       } else {
         throw new Error('APIからのレスポンスにレポートが含まれていません。');
