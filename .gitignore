@@ -16,3 +16,10 @@ products/*/
 
 # Private
 .private/
+
+# Generated files
+full_lint_debug_output.txt
+lint_errors.txt
+lint_output.txt
+playwright-report/
+test-results/
