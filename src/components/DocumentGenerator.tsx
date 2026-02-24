@@ -90,6 +90,24 @@ const DocumentGenerator = () => {
     }
   }, [description, template]);
 
+  /**
+   * 生成されたドキュメントをMarkdownファイルとしてダウンロードする。
+   */
+  const handleDownload = useCallback(() => {
+    if (document) {
+      const blob = new Blob([document], { type: 'text/markdown' });
+      const url = URL.createObjectURL(blob);
+      const a = window.document.createElement('a');
+      a.href = url;
+      a.download = `document-${Date.now()}.md`;
+      window.document.body.appendChild(a);
+      a.click();
+      window.document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }
+  }, [document]);
+
+
   return (
     <div className="p-6 bg-white rounded-lg shadow-md max-w-2xl mx-auto my-8">
       <h2 className="text-2xl font-bold mb-4 text-gray-800">AI書類ジェネレーター</h2>
@@ -148,6 +166,12 @@ const DocumentGenerator = () => {
               className="mt-2 w-full inline-flex justify-center items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-blue-700 bg-blue-100 hover:bg-blue-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
             >
               クリップボードにコピー
+            </button>
+            <button
+              onClick={handleDownload}
+              className="mt-2 ml-2 w-full inline-flex justify-center items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-green-700 bg-green-100 hover:bg-green-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
+            >
+              ダウンロード
             </button>
           </div>
         )}
