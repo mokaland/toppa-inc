@@ -57,7 +57,7 @@ describe('authClient', () => {
   });
 
   it('signUp should throw an error on failure', async () => {
-        mockSignUp.mockResolvedValueOnce({ user: null, session: null });
+        mockSignUp.mockRejectedValueOnce(new Error('Mock signup error'));
 
     await expect(signUp('error@example.com', 'password123')).rejects.toThrow('Mock signup error');
   });
@@ -71,7 +71,7 @@ describe('authClient', () => {
   });
 
   it('signIn should throw an error on failure', async () => {
-        mockSignInWithPassword.mockResolvedValueOnce({ user: null, session: null });
+        mockSignInWithPassword.mockRejectedValueOnce(new Error('Mock signin error'));
 
     await expect(signIn('error@example.com', 'password123')).rejects.toThrow('Mock signin error');
   });

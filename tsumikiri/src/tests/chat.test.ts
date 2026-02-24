@@ -1,9 +1,31 @@
 import { describe, it, expect, vi, beforeEach, beforeAll } from 'vitest';
 import { Hono } from 'hono';
 import { SupabaseClient } from '@supabase/supabase-js';
-import chatApi from '../../api/chat';
+
 
 const mockGetUser = vi.fn(() => ({ data: { user: { id: 'test-user-id' } }, error: null }));
+
+const mockInsert = vi.fn(() => ({
+  data: { id: 'message-id-1', user_id: 'test-user-id', role: 'user', content: 'test message', created_at: new Date().toISOString() },
+  error: null,
+}));
+
+const mockSelect = vi.fn(() => mockQueryChain);
+
+const mockQueryChain = {
+  eq: vi.fn(() => mockQueryChain),
+  order: vi.fn(() => ({
+    data: [{
+      id: 'message-id-1',
+      user_id: 'test-user-id',
+      role: 'user',
+      content: 'hello',
+      created_at: new Date().toISOString()
+    }],
+    error: null
+  })),
+  select: mockSelect,
+};
 
 const mockSupabaseClient = {
   auth: {
@@ -20,15 +42,8 @@ const mockSupabaseClient = {
       };
     } else if (tableName === 'chat_messages') {
       return {
-        insert: vi.fn(() => ({
-          data: [{ id: 'message-id-1', user_id: 'test-user-id', role: 'user', content: 'test message', created_at: new Date().toISOString() }],
-          error: null,
-        })),
-        select: vi.fn(() => ({
-          eq: vi.fn(() => ({
-            order: vi.fn(() => ({ data: [{ id: 'message-id-1', user_id: 'test-user-id', role: 'user', content: 'hello', created_at: new Date().toISOString() }], error: null })),
-          })),
-        })),
+        insert: mockInsert,
+        ...mockQueryChain,
       };
     }
     return { /* default mock for other tables if needed */ };
@@ -38,6 +53,32 @@ const mockSupabaseClient = {
 vi.doMock('@supabase/supabase-js', () => ({
   createClient: vi.fn(() => mockSupabaseClient),
   SupabaseClient: vi.fn(),
+}));
+
+const originalFetch = global.fetch;
+vi.stubGlobal('fetch', vi.fn((url: string, options: RequestInit) => {
+  if (url === 'https://api.openai.com/v1/chat/completions') {
+    return Promise.resolve({
+      ok: true,
+      status: 200,
+      body: new ReadableStream({
+        start(controller) {
+          const encoder = new TextEncoder();
+          const createChunk = (content: string) => `data: ${JSON.stringify({
+            choices: [{
+              delta: { content: content }
+            }]
+          })}\n\n`;
+          controller.enqueue(encoder.encode(createChunk('AI response')));
+          controller.enqueue(encoder.encode('data: [DONE]\n\n'));
+          controller.close();
+        },
+      }),
+      json: () => Promise.resolve({ response: 'AI response' }),
+      text: () => Promise.resolve('AI response'),
+    });
+  }
+  return originalFetch(url, options);
 }));
 
 // Mock AI Provider (OpenAI)
@@ -69,23 +110,32 @@ app.use('*', async (c, next) => {
   c.set('userId', 'test-user-id');
   await next();
 });
-app.route('/api/chat', chatApi);
+let chatApi: typeof import('../../api/chat').default;
+
+
 describe('Chat Feature Integration Tests', () => {
-  let supabase: SupabaseClient;
+
+  beforeAll(async () => {
+    // Dynamically import chatApi after mocks are set up
+    const chatModule = await import('../../api/chat');
+    chatApi = chatModule.default;
+    app.route('/api/chat', chatApi);
+  });
 
   beforeEach(async () => {
     vi.clearAllMocks();
-    const { createClient } = await import('@supabase/supabase-js');
-    supabase = createClient('dummy-url', 'dummy-key');
     mockGetUser.mockClear();
-    mockSupabaseClient.from.mockClear();
+    mockInsert.mockClear();
+    mockSelect.mockClear();
+    mockQueryChain.eq.mockClear();
+    mockQueryChain.order.mockClear();
   });
 
   it('should allow authenticated user to send message and receive AI response', async () => {
     const req = new Request('http://localhost/api/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: 'Hello AI' }),
+      body: JSON.stringify({ messages: [{ role: 'user', content: 'Hello AI' }] }),
     });
 
     const res = await app.request(req);
@@ -93,7 +143,7 @@ describe('Chat Feature Integration Tests', () => {
 
     expect(res.status).toBe(200);
     expect(json.response).toBe('AI response');
-    expect(supabase.from('chat_messages').insert).toHaveBeenCalledTimes(2); // user message + AI response
+    expect(mockInsert).toHaveBeenCalledTimes(2); // user message + AI response
   });
 
   it('should store and retrieve chat history correctly', async () => {
@@ -101,7 +151,7 @@ describe('Chat Feature Integration Tests', () => {
     const sendReq = new Request('http://localhost/api/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: 'History test' }),
+      body: JSON.stringify({ messages: [{ role: 'user', content: 'History test' }] }),
     });
     await app.request(sendReq);
 
@@ -116,7 +166,7 @@ describe('Chat Feature Integration Tests', () => {
     expect(res.status).toBe(200);
     expect(Array.isArray(json.history)).toBe(true);
     expect(json.history.length).toBeGreaterThan(0); // Should contain at least the simulated message
-    expect(supabase.from('chat_messages').select).toHaveBeenCalledWith('*');
+    expect(mockSelect).toHaveBeenCalledWith('*');
   });
 
   it('should prevent unauthenticated access to chat API', async () => {

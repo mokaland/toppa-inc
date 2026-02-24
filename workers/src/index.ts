@@ -90,14 +90,34 @@ export function createWorkerApp(bindings: Bindings) {
       const user = c.get('user');
       console.log(`Report generation request from user: ${user.id}`);
 
-      const { csvData, userInstruction } = await c.req.json<{ csvData: string; userInstruction: string }>();
+      const formData = await c.req.formData();
+      const file = formData.get('file');
+      const userInstruction = formData.get('userInstruction');
 
-      if (!userInstruction) {
-        return c.json({ error: '`userInstruction`は必須です' }, 400);
+      if (!file || typeof file === 'string') {
+        return c.json({ error: 'ファイルがアップロードされていません。' }, 400);
       }
 
+      if (!(file instanceof File)) {
+        return c.json({ error: 'アップロードされた内容がファイルではありません。' }, 400);
+      }
+
+      if (!userInstruction || typeof userInstruction !== 'string') {
+        return c.json({ error: '`userInstruction`は必須です。' }, 400);
+      }
+
+      if (file.type !== 'text/csv') {
+        return c.json({ error: '対応しているファイル形式はCSVのみです。' }, 400);
+      }
+
+      const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
+      if (file.size > MAX_FILE_SIZE) {
+        return c.json({ error: 'ファイルサイズは5MB以下にしてください。' }, 400);
+      }
+
+      const csvContent = await file.text();
       const openaiApiKey = c.env.OPENAI_API_KEY;
-      const report = await generateReport(csvToJson(csvData), userInstruction, openaiApiKey);
+      const report = await generateReport(csvToJson(csvContent), userInstruction, openaiApiKey);
 
       return c.json({ report });
 

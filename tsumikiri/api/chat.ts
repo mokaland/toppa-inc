@@ -8,6 +8,8 @@ const chatApi = new Hono();
 const supabaseUrl: string = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey: string = import.meta.env.VITE_SUPABASE_ANON_KEY;
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
+console.log('chat.ts supabase client:', supabase);
+
 
 chatApi.post('/', async (c) => {
   const { messages } = await c.req.json();
@@ -94,6 +96,31 @@ chatApi.post('/', async (c) => {
 
   } catch (error) {
     console.error('Error during AI chat:', error);
+    return c.json({ error: `Error: ${error.message}` }, 500);
+  }
+});
+
+chatApi.get('/history', async (c) => {
+  const userId = c.get('userId');
+  if (!userId) {
+    return c.json({ error: 'Unauthorized' }, 401);
+  }
+
+  try {
+    const { data: messages, error } = await supabase
+      .from('chat_messages')
+      .select('*')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: true });
+
+    if (error) {
+      console.error('Error fetching chat history:', error);
+      return c.json({ error: 'Failed to fetch chat history' }, 500);
+    }
+
+    return c.json({ history: messages });
+  } catch (error: any) {
+    console.error('Error in chat history endpoint:', error);
     return c.json({ error: `Error: ${error.message}` }, 500);
   }
 });
