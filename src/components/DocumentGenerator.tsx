@@ -160,7 +160,7 @@ const DocumentGenerator = () => {
         {document && (
           <div>
             <h3 className="text-xl font-semibold mb-2 text-gray-700">生成された書類</h3>
-            <div className="prose prose-sm max-w-none p-2 bg-gray-100 rounded-md overflow-auto" dangerouslySetInnerHTML={{ __html: marked.parse(document) as string }} />
+            <div className="prose prose-sm max-w-none p-4 bg-gray-100 border border-gray-200 rounded-md overflow-auto max-h-96" dangerouslySetInnerHTML={{ __html: marked.parse(document) as string }} />
             <button
               onClick={() => navigator.clipboard.writeText(document)}
               className="mt-2 w-full inline-flex justify-center items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-blue-700 bg-blue-100 hover:bg-blue-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
