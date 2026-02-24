@@ -6,7 +6,7 @@ const API_URL = import.meta.env.VITE_API_BASE_URL ? `${import.meta.env.VITE_API_
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
 // --- Icon Components (unchanged) ---
 const CsvIcon = () => (
-  <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+  <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 text-neutral-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
   </svg>
 );
@@ -182,16 +182,16 @@ const CsvUpload: React.FC = () => {
 
 
   return (
-    <div className="p-6 bg-gray-50 min-h-screen">
+    <div className="p-6 bg-neutral-50 min-h-screen">
       <div className="max-w-4xl mx-auto">
-        <h1 className="text-3xl font-bold text-gray-800 mb-2">AIレポート生成</h1>
-        <p className="text-gray-600 mb-6">CSVファイルをアップロードし、自然言語で指示するだけで、AIが分析レポートを自動生成します。</p>
+        <h1 className="text-3xl font-bold text-neutral-800 mb-2">AIレポート生成</h1>
+        <p className="text-neutral-600 mb-6">CSVファイルをアップロードし、自然言語で指示するだけで、AIが分析レポートを自動生成します。</p>
 
         {/* --- Step 1: Upload --- */}
         <div className="bg-white p-6 rounded-lg shadow-md mb-6">
-          <h2 className="text-xl font-semibold text-gray-700 mb-4">Step 1: CSVファイルをアップロード</h2>
+          <h2 className="text-xl font-semibold text-neutral-700 mb-4">Step 1: CSVファイルをアップロード</h2>
           <div
-            className="border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors border-gray-300 hover:border-gray-400"
+            className="border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors border-gray-300 hover:border-neutral-400"
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
             onDrop={handleDrop}
@@ -201,20 +201,20 @@ const CsvUpload: React.FC = () => {
             <div className="flex flex-col items-center">
               <CsvIcon />
               {fileName ? (
-                <p className="mt-2 text-gray-600">選択中のファイル: {fileName}</p>
+                <p className="mt-2 text-neutral-600">選択中のファイル: {fileName}</p>
               ) : (
-                <p className="mt-2 text-gray-600">クリックしてCSVファイルを選択</p>
+                <p className="mt-2 text-neutral-600">クリックしてCSVファイルを選択</p>
               )}
-              <p className="text-sm text-gray-500 mt-1">ファイルサイズは5MBまで</p>
+              <p className="text-sm text-neutral-500 mt-1">ファイルサイズは5MBまで</p>
             </div>
           </div>
           {file && (
-            <div className="mt-4 p-4 bg-gray-100 rounded-md">
-              <p className="font-semibold text-gray-800">選択されたファイル: {file.name}</p>
+            <div className="mt-4 p-4 bg-neutral-100 rounded-md">
+              <p className="font-semibold text-neutral-800">選択されたファイル: {file.name}</p>
               {csvPreview && csvPreview.length > 0 && (
                  <div className="mt-2 overflow-x-auto">
-                    <table className="w-full text-sm text-left text-gray-500">
-                        <thead className="text-xs text-gray-700 uppercase bg-gray-200">
+                    <table className="w-full text-sm text-left text-neutral-500">
+                        <thead className="text-xs text-neutral-700 uppercase bg-neutral-200">
                             <tr>{csvPreview[0].map((header, i) => <th key={i} className="px-4 py-2">{header}</th>)}</tr>
                         </thead>
                         <tbody>
@@ -233,12 +233,12 @@ const CsvUpload: React.FC = () => {
 
         {/* --- Step 2: Instructions --- */}
         <div className="bg-white p-6 rounded-lg shadow-md mb-6">
-            <h2 className="text-xl font-semibold text-gray-700 mb-4">Step 2: AIへの指示を入力</h2>
+            <h2 className="text-xl font-semibold text-neutral-700 mb-4">Step 2: AIへの指示を入力</h2>
             <textarea
                 value={instructions}
                 onChange={(e) => setInstructions(e.target.value)}
                 placeholder="例: 部門別の売上を分析して、改善提案をまとめてください。"
-                className="w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition"
+                className="w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-primary focus:border-primary transition"
                 rows={4}
             />
         </div>
@@ -248,30 +248,30 @@ const CsvUpload: React.FC = () => {
             <button
                 onClick={handleGenerateReport}
                 disabled={!file || !instructions || isLoading}
-                className="w-full max-w-xs px-6 py-3 text-white font-semibold bg-blue-600 rounded-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-transform transform hover:scale-105 flex items-center justify-center mx-auto"
+                className="w-full max-w-xs px-6 py-3 text-white font-semibold bg-primary rounded-md hover:bg-primary-dark disabled:bg-neutral-400 disabled:cursor-not-allowed transition-transform transform hover:scale-105 flex items-center justify-center mx-auto"
             >
                 {isLoading ? <SpinnerIcon /> : null}
                 {isLoading ? 'レポートを生成中...' : 'レポートを生成する'}
             </button>
         </div>
         
-        {error && <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-md mb-6" role="alert">{error}</div>}
+        {error && <div className="bg-danger-light border border-red-400 text-danger px-4 py-3 rounded-md mb-6" role="alert">{error}</div>}
 
         {/* --- Step 4: Result --- */}
         {(isLoading || report) && (
             <div className="bg-white p-6 rounded-lg shadow-md">
                 <div className="flex justify-between items-center mb-4">
-                    <h2 className="text-xl font-semibold text-gray-700">生成されたレポート</h2>
+                    <h2 className="text-xl font-semibold text-neutral-700">生成されたレポート</h2>
                     {report && !isLoading && (
                         <button 
                             onClick={handleDownloadReport}
-                            className="px-4 py-2 text-sm font-medium text-blue-600 border border-blue-600 rounded-md hover:bg-blue-50 transition"
+                            className="px-4 py-2 text-sm font-medium text-primary border border-primary rounded-md hover:bg-secondary transition"
                         >
                             Markdownをダウンロード
                         </button>
                     )}
                 </div>
-                {isLoading && !report && <p className="text-gray-600">AIがレポートを生成しています。しばらくお待ちください...</p>}
+                {isLoading && !report && <p className="text-neutral-600">AIがレポートを生成しています。しばらくお待ちください...</p>}
                 <div
                     className="prose max-w-none"
                     dangerouslySetInnerHTML={{ __html: report }}
