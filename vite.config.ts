@@ -21,13 +21,12 @@ export default defineConfig({
     },
   },
   test: {
-    exclude: [
-      '**/node_modules/**',
-      '**/dist/**',
-      '**/workers/**',
-      '**/tsumikiri/**',
-      'test/unit/**',
-      'src/api/**/*.test.*',
-    ],
-  },
+                exclude: [
+                  '**/node_modules/**',
+                  '**/dist/**',
+                  '**/workers/**',
+                  '**/tsumikiri/**',
+                  'test/unit/**',
+                  'src/api/**/*.test.js',
+                ],  },
 });
