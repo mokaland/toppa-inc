@@ -1,3 +1,4 @@
+import { createClient, SupabaseClient, AuthResponse, Session } from '@supabase/supabase-js';
 
 // src/api/authClient.ts
 
@@ -20,10 +21,6 @@ try {
  * @param password - ユーザーのパスワード
  * @returns ユーザーセッションまたはエラー
  */
-import { createClient, SupabaseClient, AuthResponse, Session } from '@supabase/supabase-js';
-
-// ... (rest of the file)
-
 export async function signUp(email: string, password: string): Promise<AuthResponse['data']> {
   try {
     const { data, error } = await supabase.auth.signUp({

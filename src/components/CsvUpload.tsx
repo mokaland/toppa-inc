@@ -154,7 +154,7 @@ const CsvUpload: React.FC = () => {
         }
 
       } catch (err: unknown) {
-        setError((err instanceof Error) ? err.message : 'レポートの生成に失敗しました。もう一度お試しください');
+        setError('レポートの生成に失敗しました。もう一度お試しください');
       } finally {
         setIsLoading(false);
       }

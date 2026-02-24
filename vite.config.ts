@@ -21,10 +21,12 @@ export default defineConfig({
     },
   },
   test: {
-                exclude: [
-                  '**/node_modules/**',
-                  '**/dist/**',
-                  '**/workers/dist/**',
-                  '**/tsumikiri/dist/**',
-                ],  },
-});
+                                exclude: [
+                                  '**/node_modules/**',
+                                  '**/dist/**',
+                                  '**/workers/dist/**',
+                                  '**/tsumikiri/dist/**',
+                                ],
+                    setupFiles: ['./src/setupTests.ts'],
+                  },
+                });
