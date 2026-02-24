@@ -2,7 +2,8 @@ import React, { useState, useCallback, useRef } from 'react';
 import Papa from 'papaparse';
 import { marked } from 'marked';
 
-const API_URL = import.meta.env.VITE_API_BASE_URL ? `${import.meta.env.VITE_API_BASE_URL}/api/reports/generate` : 'http://localhost:8787/api/reports/generate'; // Local API endpoint
+const REPORT_GENERATION_API_URL = import.meta.env.VITE_API_BASE_URL ? `${import.meta.env.VITE_API_BASE_URL}/api/reports/generate` : 'http://localhost:8787/api/reports/generate'; // Local API endpoint for report generation
+const CSV_UPLOAD_API_URL = import.meta.env.VITE_API_BASE_URL ? `${import.meta.env.VITE_API_BASE_URL}/api/csv/upload` : 'http://localhost:8787/api/csv/upload'; // Local API endpoint for CSV upload
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
 // --- Icon Components (unchanged) ---
 const CsvIcon = () => (
@@ -118,52 +119,70 @@ const CsvUpload: React.FC = () => {
     setError('');
     setReport('');
 
-    const reader = new FileReader();
-    reader.onload = async (event) => {
-      const csvData = event.target?.result as string;
+    try {
+      // Step 1: Upload CSV file
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const uploadResponse = await fetch(CSV_UPLOAD_API_URL, {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!uploadResponse.ok) {
+        throw new Error(`ファイルアップロードAPIエラー: ${uploadResponse.status} ${uploadResponse.statusText}`);
+      }
+
+      // Step 2: Read CSV content for report generation (if needed client-side, or backend could handle)
+      const reader = new FileReader();
+      const csvDataPromise = new Promise<string>((resolve, reject) => {
+        reader.onload = (event) => resolve(event.target?.result as string);
+        reader.onerror = () => reject(new Error('ファイルの読み込み中にエラーが発生しました。'));
+        reader.readAsText(file);
+      });
+
+      const csvData = await csvDataPromise;
 
       if (!csvData) {
-        setError('ファイルの読み込みに失敗しました。');
-        setIsLoading(false);
-        return;
+        throw new Error('ファイルの読み込みに失敗しました。');
       }
 
-      try {
-        const response = await fetch(API_URL, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            csvData: csvData,
-            userInstruction: instructions,
-          }),
-        });
+      // Step 3: Generate Report using uploaded CSV data
+      const reportResponse = await fetch(REPORT_GENERATION_API_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          csvData: csvData,
+          userInstruction: instructions,
+        }),
+      });
 
-        if (!response.ok) {
-          throw new Error(`APIエラー: ${response.status} ${response.statusText}`);
-        }
-
-        const data = await response.json();
-        
-        if (data.report) {
-          const reportHtml = await marked.parse(data.report);
-          setReport(reportHtml);
-        } else {
-            throw new Error('APIからのレスポンスにレポートが含まれていません。');
-        }
-
-      } catch (err: unknown) {
-        setError('レポートの生成に失敗しました。もう一度お試しください');
-      } finally {
-        setIsLoading(false);
+      if (!reportResponse.ok) {
+        throw new Error(`レポート生成APIエラー: ${reportResponse.status} ${reportResponse.statusText}`);
       }
-    };
-    reader.onerror = () => {
-        setError('ファイルの読み込み中にエラーが発生しました。');
-        setIsLoading(false);
-    };
-    reader.readAsText(file);
+
+      const data = await reportResponse.json();
+
+      if (data.report) {
+        const reportHtml = await marked.parse(data.report);
+        setReport(reportHtml);
+      } else {
+        throw new Error('APIからのレスポンスにレポートが含まれていません。');
+      }
+
+    } catch (err: unknown) {
+      let errorMessage = '処理中にエラーが発生しました。もう一度お試しください。';
+      if (err instanceof Error) {
+        errorMessage = `エラー: ${err.message}`;
+      } else if (typeof err === 'object' && err !== null && 'message' in err && typeof (err as { message: string }).message === 'string') {
+        errorMessage = `エラー: ${(err as { message: string }).message}`;
+      }
+      setError(errorMessage);
+    } finally {
+      setIsLoading(false);
+    }
   };
   
   const handleDownloadReport = () => {

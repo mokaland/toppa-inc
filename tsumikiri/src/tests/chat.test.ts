@@ -1,23 +1,44 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, beforeAll } from 'vitest';
 import { Hono } from 'hono';
-import { getRuntime } from '@hono/node-server/runtime';
 import { SupabaseClient } from '@supabase/supabase-js';
-import { default as chatApi } from '../api/chat'; // chat API router
-import { default as authApi } from '../api/auth'; // auth API router (for authentication middleware)
+import chatApi from '../../api/chat';
 
-// Mock Supabase Client
-vi.mock('@supabase/supabase-js', () => {
-  const mockSupabaseClient = {
-    auth: {
-      getUser: vi.fn(() => ({ data: { user: { id: 'test-user-id' } }, error: null })),
-    },
-    from: vi.fn(() => ({
-      insert: vi.fn(() => ({ data: [{ id: 'message-id-1', content: 'test message' }], error: null })),
-      select: vi.fn(() => ({ data: [{ id: 'message-id-1', content: 'hello' }], error: null })),
-    })),
-  };
-  return { createClient: vi.fn(() => mockSupabaseClient), SupabaseClient: vi.fn(() => mockSupabaseClient) };
-});
+const mockGetUser = vi.fn(() => ({ data: { user: { id: 'test-user-id' } }, error: null }));
+
+const mockSupabaseClient = {
+  auth: {
+    getUser: mockGetUser,
+  },
+  from: vi.fn((tableName: string) => {
+    if (tableName === 'user_settings') {
+      return {
+        select: vi.fn(() => ({
+          eq: vi.fn(() => ({
+            single: vi.fn(() => ({ data: { openai_api_key: 'mock-openai-key' }, error: null })),
+          })),
+        })),
+      };
+    } else if (tableName === 'chat_messages') {
+      return {
+        insert: vi.fn(() => ({
+          data: [{ id: 'message-id-1', user_id: 'test-user-id', role: 'user', content: 'test message', created_at: new Date().toISOString() }],
+          error: null,
+        })),
+        select: vi.fn(() => ({
+          eq: vi.fn(() => ({
+            order: vi.fn(() => ({ data: [{ id: 'message-id-1', user_id: 'test-user-id', role: 'user', content: 'hello', created_at: new Date().toISOString() }], error: null })),
+          })),
+        })),
+      };
+    }
+    return { /* default mock for other tables if needed */ };
+  }),
+};
+
+vi.doMock('@supabase/supabase-js', () => ({
+  createClient: vi.fn(() => mockSupabaseClient),
+  SupabaseClient: vi.fn(),
+}));
 
 // Mock AI Provider (OpenAI)
 vi.mock('openai', () => {
@@ -25,9 +46,16 @@ vi.mock('openai', () => {
     OpenAI: vi.fn(() => ({
       chat: {
         completions: {
-          create: vi.fn(() => ({
-            choices: [{ message: { content: 'AI response' } }],
-          })),
+          create: vi.fn(async function* () {
+            const encoder = new TextEncoder();
+            const createChunk = (content: string) => `data: ${JSON.stringify({
+              choices: [{
+                delta: { content: content }
+              }]
+            })}\n\n`;
+            yield encoder.encode(createChunk('AI response'));
+            yield encoder.encode('data: [DONE]\n\n');
+          }),
         },
       },
     })),
@@ -42,14 +70,15 @@ app.use('*', async (c, next) => {
   await next();
 });
 app.route('/api/chat', chatApi);
-app.route('/api/auth', authApi); // Mount authApi if needed for full integration test
-
 describe('Chat Feature Integration Tests', () => {
   let supabase: SupabaseClient;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.clearAllMocks();
-    supabase = require('@supabase/supabase-js').createClient();
+    const { createClient } = await import('@supabase/supabase-js');
+    supabase = createClient('dummy-url', 'dummy-key');
+    mockGetUser.mockClear();
+    mockSupabaseClient.from.mockClear();
   });
 
   it('should allow authenticated user to send message and receive AI response', async () => {

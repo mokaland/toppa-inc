@@ -2,6 +2,7 @@ import { expect, test, vi } from 'vitest';
 import { createWorkerApp } from './index'; // createWorkerApp をインポート
 import { supabaseMiddleware } from './middleware/supabase';
 import { authMiddleware } from './middleware/auth';
+import { Hono } from 'hono'; // Import Hono
 
 // モックの環境変数
 const mockBindings = {
@@ -10,6 +11,17 @@ const mockBindings = {
   OPENAI_API_KEY: 'mock-openai-key',
 };
 
+vi.mock('openai', () => ({
+  default: class OpenAI {
+    chat = {
+      completions: {
+        create: vi.fn(async () => ({
+          choices: [{ message: { content: 'AIアシスタントからの応答' } }],
+        })),
+      },
+    };
+  },
+}));
 // supabaseMiddlewareとauthMiddlewareをモックする
 vi.mock('./middleware/supabase', () => ({
   supabaseMiddleware: vi.fn(async (c, next) => {
@@ -25,8 +37,13 @@ vi.mock('./middleware/auth', () => ({
   }),
 }));
 
-// createWorkerApp を使用してアプリケーションインスタンスを作成
-const app = createWorkerApp(mockBindings);
+// テスト用のHonoアプリケーションを作成し、createWorkerAppをマウント
+const testApp = new Hono();
+testApp.use('*', async (c, next) => {
+  c.env = mockBindings; // c.env にモックの環境変数を設定
+  await next();
+});
+testApp.route('/', createWorkerApp(mockBindings)); // createWorkerApp をルートにマウント
 
 // Supabaseクライアントのモック
 const mockSupabase = {
@@ -49,12 +66,10 @@ vi.mock('@supabase/supabase-js', () => ({
 
 
 test('POST /api/chat should return AI response', async () => {
-  const res = await app.request('http://localhost/api/chat', {
+  const res = await testApp.request('http://localhost/api/chat', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ userId: 'test-user', message: 'Hello AI' }),
-    // env を明示的に渡す
-    env: mockBindings,
   });
   expect(res.status).toBe(200);
   const json = await res.json();
@@ -63,11 +78,10 @@ test('POST /api/chat should return AI response', async () => {
 });
 
 test('POST /api/chat should return 400 if userId or message is missing', async () => {
-  const res = await app.request('http://localhost/api/chat', {
+  const res = await testApp.request('http://localhost/api/chat', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ message: 'Hello AI' }), // userId missing
-    env: mockBindings,
   });
   expect(res.status).toBe(400);
   const json = await res.json();
@@ -75,9 +89,8 @@ test('POST /api/chat should return 400 if userId or message is missing', async (
 });
 
 test('GET /api/chat/history should return chat history', async () => {
-  const res = await app.request('http://localhost/api/chat/history?userId=test-user', {
+  const res = await testApp.request('http://localhost/api/chat/history?userId=test-user', {
     method: 'GET',
-    env: mockBindings,
   });
   expect(res.status).toBe(200);
   const json = await res.json();
@@ -86,9 +99,8 @@ test('GET /api/chat/history should return chat history', async () => {
 });
 
 test('GET /api/chat/history should return 400 if userId is missing', async () => {
-  const res = await app.request('http://localhost/api/chat/history', {
+  const res = await testApp.request('http://localhost/api/chat/history', {
     method: 'GET',
-    env: mockBindings,
   });
   expect(res.status).toBe(400);
   const json = await res.json();
