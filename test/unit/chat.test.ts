@@ -1,33 +1,36 @@
-const { sendMessage, getChatHistory } = require('../../src/api/chat');
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { sendMessage, getChatHistory } from '../../src/api/chat';
 
 describe('chat API client', () => {
-  global.fetch = jest.fn();
+  // Mock the global fetch function
+  global.fetch = vi.fn();
 
   beforeEach(() => {
-    jest.clearAllMocks();
+    // Clear all mocks before each test
+    vi.clearAllMocks();
   });
 
-  it('sendMessageが正しいリクエストを送信し、AI応答を返すこと', async () => {
+  it('sendMessage should send the correct request and return AI response', async () => {
     const mockAiResponseContent = 'こんにちは、AIアシスタントです。';
     const mockResponse = {
       ok: true,
       status: 200,
       body: {
         getReader: () => ({
-          read: jest.fn()
+          read: vi.fn()
             .mockResolvedValueOnce({ done: false, value: new TextEncoder().encode(mockAiResponseContent) })
             .mockResolvedValueOnce({ done: true }),
         }),
       },
     };
 
-    fetch.mockResolvedValueOnce(mockResponse);
+    (global.fetch as vi.Mock).mockResolvedValueOnce(mockResponse);
 
     const userId = 'test-user-1';
     const message = 'こんにちは';
     const result = await sendMessage(userId, message);
 
-    expect(fetch).toHaveBeenCalledWith('/api/chat', {
+    expect(global.fetch).toHaveBeenCalledWith('/api/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ userId, message }),
@@ -37,7 +40,7 @@ describe('chat API client', () => {
     expect(result.userId).toBe(userId);
   });
 
-  it('getChatHistoryが正しいリクエストを送信し、履歴を返すこと', async () => {
+  it('getChatHistory should send the correct request and return history', async () => {
     const mockHistory = [
       { id: '1', userId: 'test-user-1', role: 'user', content: '質問1', createdAt: '2026-02-16T00:00:00Z' },
       { id: '2', userId: 'test-user-1', role: 'assistant', content: '回答1', createdAt: '2026-02-16T00:00:01Z' },
@@ -48,24 +51,24 @@ describe('chat API client', () => {
       json: () => Promise.resolve({ history: mockHistory }),
     };
 
-    fetch.mockResolvedValueOnce(mockResponse);
+    (global.fetch as vi.Mock).mockResolvedValueOnce(mockResponse);
 
     const userId = 'test-user-1';
     const result = await getChatHistory(userId);
 
-    expect(fetch).toHaveBeenCalledWith(`/api/chat/history?userId=${userId}`, {
+    expect(global.fetch).toHaveBeenCalledWith(`/api/chat/history?userId=${userId}`, {
       method: 'GET',
       headers: { 'Content-Type': 'application/json' },
     });
     expect(result).toEqual(mockHistory);
   });
 
-  it('sendMessageがエラー時に例外をスローすること', async () => {
+  it('sendMessage should throw an exception on error', async () => {
     const mockErrorResponse = {
       ok: false,
       status: 500,
     };
-    fetch.mockResolvedValueOnce(mockErrorResponse);
+    (global.fetch as vi.Mock).mockResolvedValueOnce(mockErrorResponse);
 
     const userId = 'test-user-1';
     const message = 'エラーメッセージ';
@@ -73,12 +76,12 @@ describe('chat API client', () => {
     await expect(sendMessage(userId, message)).rejects.toThrow('Failed to send message');
   });
 
-  it('getChatHistoryがエラー時に例外をスローすること', async () => {
+  it('getChatHistory should throw an exception on error', async () => {
     const mockErrorResponse = {
       ok: false,
       status: 500,
     };
-    fetch.mockResolvedValueOnce(mockErrorResponse);
+    (global.fetch as vi.Mock).mockResolvedValueOnce(mockErrorResponse);
 
     const userId = 'test-user-1';
 

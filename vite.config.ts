@@ -24,9 +24,7 @@ export default defineConfig({
                 exclude: [
                   '**/node_modules/**',
                   '**/dist/**',
-                  '**/workers/**',
-                  '**/tsumikiri/**',
-                  'test/unit/**',
-                  'src/api/**/*.test.js',
+                  '**/workers/dist/**',
+                  '**/tsumikiri/dist/**',
                 ],  },
 });
