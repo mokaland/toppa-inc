@@ -1,8 +1,7 @@
 import { Hono } from 'hono';
 import { supabaseMiddleware } from './middleware/supabase';
 import { authMiddleware } from './middleware/auth';
-import { csvToJson } from './services/reportService'; // csvToJsonをインポート
-import { generateReport } from './report'; // generateReportをインポート
+import { generateReport } from './report';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import OpenAI from 'openai';
 
@@ -90,34 +89,18 @@ export function createWorkerApp(bindings: Bindings) {
       const user = c.get('user');
       console.log(`Report generation request from user: ${user.id}`);
 
-      const formData = await c.req.formData();
-      const file = formData.get('file');
-      const userInstruction = formData.get('userInstruction');
+      const { csvData, userInstruction } = await c.req.json<{ csvData: any; userInstruction: string }>();
 
-      if (!file || typeof file === 'string') {
-        return c.json({ error: 'ファイルがアップロードされていません。' }, 400);
-      }
-
-      if (!(file instanceof File)) {
-        return c.json({ error: 'アップロードされた内容がファイルではありません。' }, 400);
+      if (!csvData) {
+        return c.json({ error: '`csvData`は必須です。' }, 400);
       }
 
       if (!userInstruction || typeof userInstruction !== 'string') {
         return c.json({ error: '`userInstruction`は必須です。' }, 400);
       }
 
-      if (file.type !== 'text/csv') {
-        return c.json({ error: '対応しているファイル形式はCSVのみです。' }, 400);
-      }
-
-      const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
-      if (file.size > MAX_FILE_SIZE) {
-        return c.json({ error: 'ファイルサイズは5MB以下にしてください。' }, 400);
-      }
-
-      const csvContent = await file.text();
       const openaiApiKey = c.env.OPENAI_API_KEY;
-      const report = await generateReport(csvToJson(csvContent), userInstruction, openaiApiKey);
+      const report = await generateReport(JSON.stringify(csvData), userInstruction, openaiApiKey);
 
       return c.json({ report });
 
