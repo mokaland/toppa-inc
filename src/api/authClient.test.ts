@@ -4,8 +4,8 @@ import { AuthResponse, Session } from '@supabase/supabase-js';
 vi.stubEnv('VITE_SUPABASE_URL', 'http://localhost:8000');
 vi.stubEnv('VITE_SUPABASE_ANON_KEY', 'dummy-key');
 
-const mockSignUp = vi.fn<(email: string, password: string) => Promise<AuthResponse['data']>>();
-const mockSignInWithPassword = vi.fn<({ email, password }: { email: string; password: string }) => Promise<AuthResponse['data']>> ();
+const mockSignUp = vi.fn<(email: string, password: string) => Promise<AuthResponse>>();
+const mockSignInWithPassword = vi.fn<({ email, password }: { email: string; password: string }) => Promise<AuthResponse>> ();
 const mockGetSession = vi.fn<() => Promise<{ data: { session: Session | null }, error: Error | null }>> ();
 const mockSignOut = vi.fn<() => Promise<{ error: Error | null }>> ();
 
@@ -48,7 +48,7 @@ describe('authClient', () => {
   });
 
   it('signUp should successfully register a user', async () => {
-        mockSignUp.mockResolvedValueOnce({ user: { id: 'mock-user-id', email: 'test@example.com', app_metadata: {}, user_metadata: {}, aud: 'authenticated', created_at: new Date().toISOString() }, session: null });
+        mockSignUp.mockResolvedValueOnce({ data: { user: { id: 'mock-user-id', email: 'test@example.com', app_metadata: {}, user_metadata: {}, aud: 'authenticated', created_at: new Date().toISOString() }, session: null }, error: null });
 
     const data = await signUp('test@example.com', 'password123');
     expect(mockSignUp).toHaveBeenCalledWith({ email: 'test@example.com', password: 'password123' });
@@ -63,7 +63,7 @@ describe('authClient', () => {
   });
 
   it('signIn should successfully log in a user', async () => {
-        mockSignInWithPassword.mockResolvedValueOnce({ user: { id: 'mock-user-id', email: 'test@example.com', app_metadata: {}, user_metadata: {}, aud: 'authenticated', created_at: new Date().toISOString() }, session: { access_token: 'mock-token', token_type: 'bearer', expires_in: 3600, expires_at: Date.now() / 1000 + 3600, refresh_token: 'mock-refresh-token', user: { id: 'mock-user-id', email: 'test@example.com', app_metadata: {}, user_metadata: {}, aud: 'authenticated', created_at: new Date().toISOString() } } });
+        mockSignInWithPassword.mockResolvedValueOnce({ data: { user: { id: 'mock-user-id', email: 'test@example.com', app_metadata: {}, user_metadata: {}, aud: 'authenticated', created_at: new Date().toISOString() }, session: { access_token: 'mock-token', token_type: 'bearer', expires_in: 3600, expires_at: Date.now() / 1000 + 3600, refresh_token: 'mock-refresh-token', user: { id: 'mock-user-id', email: 'test@example.com', app_metadata: {}, user_metadata: {}, aud: 'authenticated', created_at: new Date().toISOString() } } }, error: null });
 
     const data = await signIn('test@example.com', 'password123');
     expect(mockSignInWithPassword).toHaveBeenCalledWith({ email: 'test@example.com', password: 'password123' });
