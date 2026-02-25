@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { Hono } from 'hono';
 import csvUpload from './csvUpload';
 import * as csvParser from '../lib/csvParser';
@@ -13,10 +13,22 @@ const mockParseCsv = vi.mocked(csvParser.parseCsv);
 describe('csvUpload handler', () => {
   let app: Hono;
 
+  let consoleWarnSpy: ReturnType<typeof vi.spyOn>;
+  let consoleErrorSpy: ReturnType<typeof vi.spyOn>;
+
   beforeEach(() => {
     app = new Hono();
     app.route('/', csvUpload); // Mount the csvUpload handler
     vi.clearAllMocks();
+    // Spy on console.warn and console.error to prevent test-related logs from appearing in stderr
+    consoleWarnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    // Restore console.warn and console.error after each test
+    consoleWarnSpy.mockRestore();
+    consoleErrorSpy.mockRestore();
   });
 
   it('should successfully upload and process a CSV file', async () => {

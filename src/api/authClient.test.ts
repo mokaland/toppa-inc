@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, beforeAll } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, beforeAll } from 'vitest';
 import { AuthResponse, Session } from '@supabase/supabase-js';
 
 vi.stubEnv('VITE_SUPABASE_URL', 'http://localhost:8000');
@@ -39,12 +39,21 @@ describe('authClient', () => {
     signOut = authClientModule.signOut;
   });
 
+  let consoleErrorSpy: ReturnType<typeof vi.spyOn>;
+
   beforeEach(() => {
     vi.clearAllMocks();
     mockSignUp.mockReset();
     mockSignInWithPassword.mockReset();
     mockGetSession.mockReset();
     mockSignOut.mockReset();
+    // Spy on console.error to prevent test-related errors from appearing in stderr
+    consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    // Restore console.error after each test
+    consoleErrorSpy.mockRestore();
   });
 
   it('signUp should successfully register a user', async () => {
