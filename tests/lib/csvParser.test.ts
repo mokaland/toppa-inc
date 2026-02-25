@@ -36,9 +36,10 @@ David,40`;
     expect(data).toHaveLength(3);
     expect(errors).toHaveLength(1);
     expect(errors[0]).toEqual({
-      code: 'MismatchedColumnCount',
-      message: 'Expected 2 columns, but found 3',
+      code: 'TooManyFields',
+      message: 'Too many fields: expected 2 fields but parsed 3',
       row: 2,
+      type: 'FieldMismatch',
     });
   });
 
