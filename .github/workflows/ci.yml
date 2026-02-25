@@ -28,7 +28,8 @@ jobs:
           cache: "npm"
 
       - name: Install dependencies
-        run: npm install
+        # Use npm ci for clean and reproducible installs in CI environments
+        run: npm ci
 
       - name: TypeScript type check
         run: npx tsc --noEmit

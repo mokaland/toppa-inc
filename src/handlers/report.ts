@@ -21,7 +21,8 @@ report.post('/generate', async (c) => {
     const genAI = new GoogleGenerativeAI(c.env.GEMINI_API_KEY);
     const model = genAI.getGenerativeModel({ model: "gemini-pro" });
 
-    const fullPrompt = `以下のCSVデータに基づいて、ユーザーの指示に従いレポートを生成してください。出力はMarkdown形式でお願いします。\n\nユーザーの指示:\n${userInstruction}\n\nCSVデータ:\n${csvData}`;
+    const csvDataString = JSON.stringify(csvData, null, 2); // Pretty print JSON
+    const fullPrompt = `以下のCSVデータに基づいて、ユーザーの指示に従いレポートを生成してください。出力はMarkdown形式でお願いします。\n\nユーザーの指示:\n${userInstruction}\n\nCSVデータ:\n${csvDataString}`;
 
     const result = await model.generateContent(fullPrompt);
     const response = await result.response;
