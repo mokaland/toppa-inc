@@ -13,6 +13,7 @@
     "test": "vitest --run",
     "test:coverage": "vitest --coverage",
     "test:e2e": "playwright test",
+    "type-check": "tsc --noEmit",
     "cf-typegen": "wrangler types",
     "cf:dev": "wrangler dev",
     "cf:deploy": "wrangler deploy"
