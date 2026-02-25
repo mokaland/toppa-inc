@@ -1,7 +1,9 @@
 import { describe, it, expect, vi, beforeEach, beforeAll } from 'vitest';
 import { Hono } from 'hono';
-import { SupabaseClient } from '@supabase/supabase-js';
 
+type Variables = {
+  userId: string | undefined;
+}
 
 const mockGetUser = vi.fn(() => ({ data: { user: { id: 'test-user-id' } }, error: null }));
 
@@ -12,8 +14,8 @@ const mockInsert = vi.fn(() => ({
 
 const mockSelect = vi.fn(() => mockQueryChain);
 
-const mockQueryChain = {
-  eq: vi.fn(() => mockQueryChain),
+const mockQueryChain: any = {
+  eq: vi.fn(() => mockQueryChain as any),
   order: vi.fn(() => ({
     data: [{
       id: 'message-id-1',
@@ -23,8 +25,8 @@ const mockQueryChain = {
       created_at: new Date().toISOString()
     }],
     error: null
-  })),
-  select: mockSelect,
+  }) as any),
+  select: mockSelect as any,
 };
 
 const mockSupabaseClient = {
@@ -104,7 +106,7 @@ vi.mock('openai', () => {
 });
 
 // Create a test Hono app
-const app = new Hono();
+const app = new Hono<{ Variables: Variables }>();
 app.use('*', async (c, next) => {
   // Mock authentication middleware
   c.set('userId', 'test-user-id');
@@ -171,7 +173,7 @@ describe('Chat Feature Integration Tests', () => {
 
   it('should prevent unauthenticated access to chat API', async () => {
     // Modify the mock auth middleware to return no user
-    const unauthenticatedApp = new Hono();
+    const unauthenticatedApp = new Hono<{ Variables: Variables }>();
     unauthenticatedApp.use('*', async (c, next) => {
       c.set('userId', undefined); // No user ID
       await next();

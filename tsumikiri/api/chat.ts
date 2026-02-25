@@ -1,8 +1,14 @@
 import { Hono } from 'hono';
-import { streamText } from 'hono/streaming';
 import { createClient } from '@supabase/supabase-js';
 
-const chatApi = new Hono();
+type Env = {
+  Variables: {
+    userId: string | undefined;
+  };
+  Bindings: {}; // chat.tsでは直接Bindingsは使用しないが、型定義のため含める
+}
+
+const chatApi = new Hono<Env>();
 
 // Supabaseクライアントの初期化 (環境変数から取得)
 const supabaseUrl: string = import.meta.env.VITE_SUPABASE_URL;
@@ -96,7 +102,7 @@ chatApi.post('/', async (c) => {
 
   } catch (error) {
     console.error('Error during AI chat:', error);
-    return c.json({ error: `Error: ${error.message}` }, 500);
+    return c.json({ error: `Error: ${(error as Error).message}` }, 500);
   }
 });
 
@@ -121,7 +127,7 @@ chatApi.get('/history', async (c) => {
     return c.json({ history: messages });
   } catch (error: any) {
     console.error('Error in chat history endpoint:', error);
-    return c.json({ error: `Error: ${error.message}` }, 500);
+    return c.json({ error: `Error: ${(error as Error).message}` }, 500);
   }
 });
 
