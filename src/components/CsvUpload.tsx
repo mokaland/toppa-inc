@@ -50,7 +50,6 @@ const CsvUpload: React.FC = () => {
     setCsvPreview(null);
     setFileName('');
     setReport('');
-    setInstructions('');
 
     const droppedFile = event.dataTransfer.files?.[0];
 
@@ -74,7 +73,6 @@ const CsvUpload: React.FC = () => {
     setCsvPreview(null);
     setFileName('');
     setReport('');
-    setInstructions('');
 
     const selectedFile = event.target.files?.[0];
 
