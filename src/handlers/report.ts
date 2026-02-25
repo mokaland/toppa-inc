@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { streamText } from 'hono/streaming';
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import { supabase } from '../lib/supabaseClient'; // Import Supabase client
 
 interface Env {
   GEMINI_API_KEY: string;
@@ -9,7 +10,11 @@ interface Env {
 const report = new Hono<{ Bindings: Env }>();
 
 report.post('/generate', async (c) => {
-  const { csvData, userInstruction } = await c.req.json();
+  const { csvData, userInstruction, user_id } = await c.req.json(); // Accept user_id from body
+
+  if (!user_id) {
+    return c.json({ error: 'User ID is required' }, 400);
+  }
 
   // 2. AIプロバイダーへのリクエスト (Gemini API連携)
   try {
@@ -22,15 +27,17 @@ report.post('/generate', async (c) => {
     const response = await result.response;
     const aiResponse = response.text();
 
-    // 3. レポート履歴の保存 (Supabase連携は別途 - 必要であればここで実装)
-    // const supabase = new SupabaseClient(c.env.SUPABASE_URL, c.env.SUPABASE_ANON_KEY);
-    // await supabase.from('reports').insert({
-    //   user_id: userId,
-    //   title: `Generated Report for ${fileName}`,
-    //   file_name: fileName,
-    //   prompt: prompt,
-    //   result: aiResponse,
-    // });
+    // 3. レポート履歴の保存 (Supabase連携)
+    // Generate a simple title for the report
+    const reportTitle = `AI Report: ${userInstruction.substring(0, 50)}${userInstruction.length > 50 ? '...' : ''}`;
+    
+    await supabase.from('reports').insert({
+      user_id: user_id,
+      title: reportTitle,
+      file_name: 'generated_report.md', // Placeholder file name
+      prompt: fullPrompt,
+      result: aiResponse,
+    });
 
     return streamText(c, async (stream) => {
       await stream.write(JSON.stringify({ report: aiResponse }));
@@ -42,4 +49,4 @@ report.post('/generate', async (c) => {
   }
 });
 
-export default report; 
+export default report;

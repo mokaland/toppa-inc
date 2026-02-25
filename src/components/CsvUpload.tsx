@@ -1,6 +1,7 @@
 import React, { useState, useCallback, useRef } from 'react';
 import Papa from 'papaparse';
 import { marked } from 'marked';
+import { useAuthStore } from '@/stores/authStore'; // Import useAuthStore
 
 const CSV_UPLOAD_API_URL = import.meta.env.VITE_API_BASE_URL ? `${import.meta.env.VITE_API_BASE_URL}/api/csv/upload` : 'http://localhost:8787/api/csv/upload'; // Local API endpoint for CSV upload
 const REPORT_GENERATION_API_URL = import.meta.env.VITE_API_BASE_URL ? `${import.meta.env.VITE_API_BASE_URL}/api/reports/generate` : 'http://localhost:8787/api/reports/generate';
@@ -29,6 +30,8 @@ const CsvUpload: React.FC = () => {
   const [fileName, setFileName] = useState<string>('');
   const [csvPreview, setCsvPreview] = useState<string[][] | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const { user } = useAuthStore(); // Get user from auth store
 
   const handleDragOver = useCallback((event: React.DragEvent<HTMLDivElement>) => {
     event.preventDefault();
@@ -115,6 +118,11 @@ const CsvUpload: React.FC = () => {
       setError('分析指示を入力してください。');
       return;
     }
+    if (!user?.id) {
+      setError('ユーザーが認証されていません。');
+      return;
+    }
+
     setIsLoading(true);
     setError('');
     setReport('');
@@ -149,6 +157,7 @@ const CsvUpload: React.FC = () => {
         body: JSON.stringify({
           csvData: uploadData.data, // Assuming backend returns processed CSV data
           userInstruction: instructions,
+          user_id: user.id, // Pass user ID to backend
         }),
       });
 
