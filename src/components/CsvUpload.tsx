@@ -144,6 +144,11 @@ const CsvUpload: React.FC = () => {
       }
 
       const uploadData = await uploadResponse.json();
+      if (uploadData.errors && uploadData.errors.length > 0) {
+        // Display CSV parsing errors to the user
+        const errorMessages = uploadData.errors.map((err: { message: string }) => err.message).join('; ');
+        throw new Error(`CSVパースエラー: ${errorMessages}`);
+      }
       if (!uploadData.data) {
         throw new Error('CSVデータの処理に失敗しました。');
       }
