@@ -1,14 +1,15 @@
 import { Hono } from 'hono';
 import { supabaseMiddleware } from './middleware/supabase';
 import { authMiddleware } from './middleware/auth';
-import { generateReport } from './report';
-import { createClient, SupabaseClient } from '@supabase/supabase-js';
-import OpenAI from 'openai';
+import csvUpload from '../../src/handlers/csvUpload'; // Import csvUpload handler
+import report from '../../src/handlers/report';     // Import report handler (using GoogleGenerativeAI and Supabase)
+import { createClient } from '@supabase/supabase-js'; // Keep createClient for chat routes
 
 // Cloudflare Workers の型定義
 type Bindings = {
   SUPABASE_URL: string;
   SUPABASE_ANON_KEY: string;
+  GEMINI_API_KEY: string; // Add GEMINI_API_KEY
   OPENAI_API_KEY: string;
 }
 
@@ -22,7 +23,11 @@ export function createWorkerApp(bindings: Bindings) {
   api.use('*', supabaseMiddleware);
   api.use('*', authMiddleware);
 
-  // Chat API routes
+  // Mount CSV upload and report generation handlers
+  api.route('/csv', csvUpload);
+  api.route('/reports', report);
+
+  // Chat API routes (retained as is, using OpenAI for chat)
   api.post('/chat', async (c) => {
     try {
       const { userId, message } = await c.req.json<{ userId: string; message: string }>();
@@ -32,7 +37,9 @@ export function createWorkerApp(bindings: Bindings) {
       }
 
       const supabase = createClient(c.env.SUPABASE_URL, c.env.SUPABASE_ANON_KEY);
-      const openai = new OpenAI({ apiKey: c.env.OPENAI_API_KEY });
+      // OpenAI import and usage for chat is now handled within this route
+      const openai = new (await import('openai')).OpenAI({ apiKey: c.env.OPENAI_API_KEY });
+
 
       // Save user message
       await supabase.from('chat_messages').insert({ user_id: userId, role: 'user', content: message });
@@ -72,42 +79,10 @@ export function createWorkerApp(bindings: Bindings) {
       if (error) {
         throw error;
       }
-
       return c.json({ history: data });
     } catch (error) {
       console.error('Error in /api/chat/history:', error);
       return c.json({ error: 'Failed to retrieve chat history' }, 500);
-    }
-  });
-
-  /**
-   * [要認証] AIレポート生成APIエンドポイント
-   * POST /api/reports/generate
-   */
-  api.post('/reports/generate', async (c) => {
-    try {
-      const user = c.get('user');
-      console.log(`Report generation request from user: ${user.id}`);
-
-      const { csvData, userInstruction } = await c.req.json<{ csvData: any; userInstruction: string }>();
-
-      if (!csvData) {
-        return c.json({ error: '`csvData`は必須です。' }, 400);
-      }
-
-      if (!userInstruction || typeof userInstruction !== 'string') {
-        return c.json({ error: '`userInstruction`は必須です。' }, 400);
-      }
-
-      const openaiApiKey = c.env.OPENAI_API_KEY;
-      const report = await generateReport(JSON.stringify(csvData), userInstruction, openaiApiKey);
-
-      return c.json({ report });
-
-    } catch (error) {
-      console.error('Error in /api/reports/generate:', error);
-      const errorMessage = error instanceof Error ? error.message : '不明なエラーが発生しました。';
-      return c.json({ error: `レポートの生成に失敗しました: ${errorMessage}` }, 500);
     }
   });
 
@@ -117,6 +92,7 @@ export function createWorkerApp(bindings: Bindings) {
 const app = createWorkerApp({
   SUPABASE_URL: (globalThis as any).SUPABASE_URL || '',
   SUPABASE_ANON_KEY: (globalThis as any).SUPABASE_ANON_KEY || '',
+  GEMINI_API_KEY: (globalThis as any).GEMINI_API_KEY || '', // Add GEMINI_API_KEY
   OPENAI_API_KEY: (globalThis as any).OPENAI_API_KEY || '',
 });
 
