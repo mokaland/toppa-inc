@@ -31,6 +31,12 @@ jobs:
         # Use npm ci for clean and reproducible installs in CI environments
         run: npm ci
 
+      - name: Install and build tsumikiri worker
+        run: |
+          cd tsumikiri
+          npm ci
+          npm run build
+        
       - name: TypeScript type check
         run: npx tsc --noEmit
 

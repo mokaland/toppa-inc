@@ -1,28 +1,30 @@
 import { Hono } from 'hono';
 import { createClient } from '@supabase/supabase-js';
+import { OpenAI } from 'openai'; // Import OpenAI directly
 
 type Env = {
   Variables: {
     userId: string | undefined;
   };
-  Bindings: {}; // chat.tsでは直接Bindingsは使用しないが、型定義のため含める
+  Bindings: {
+    SUPABASE_URL: string;
+    SUPABASE_ANON_KEY: string;
+    GEMINI_API_KEY: string; // Ensure this is present if needed for other AI models
+    OPENAI_API_KEY: string; // Although fetched from user_settings, keeping it for consistency if a fallback is needed
+  }; 
 }
 
 const chatApi = new Hono<Env>();
 
-// Supabaseクライアントの初期化 (環境変数から取得)
-const supabaseUrl: string = import.meta.env.VITE_SUPABASE_URL;
-const supabaseAnonKey: string = import.meta.env.VITE_SUPABASE_ANON_KEY;
-const supabase = createClient(supabaseUrl, supabaseAnonKey);
-console.log('chat.ts supabase client:', supabase);
-
-
 chatApi.post('/', async (c) => {
   const { messages } = await c.req.json();
-  const userId = c.get('userId'); // 認証ミドルウェアからuserIdを取得することを想定
+  const userId = c.get('userId');
   if (!userId) {
     return c.json({ error: 'Unauthorized' }, 401);
   }
+
+  // Use c.env for Supabase client initialization
+  const supabase = createClient(c.env.SUPABASE_URL, c.env.SUPABASE_ANON_KEY);
 
   // ユーザー設定からAPIキーを取得 (仮の実装)
   const { data: userSettings, error: settingsError } = await supabase
@@ -34,9 +36,7 @@ chatApi.post('/', async (c) => {
   if (settingsError || !userSettings?.openai_api_key) {
     return c.json({ error: 'OpenAI API Key not found for user.' }, 400);
   }
-  console.log('chatApi userSettings:', userSettings);
   const openaiApiKey = userSettings.openai_api_key;
-  console.log('chatApi openaiApiKey:', openaiApiKey);
 
   // 会話履歴をSupabaseに保存 (ユーザーメッセージ)
   await supabase.from('chat_messages').insert({
@@ -45,51 +45,27 @@ chatApi.post('/', async (c) => {
     content: messages[messages.length - 1].content,
   });
 
-  // OpenAI APIへのリクエスト
+  // OpenAI APIへのリクエスト (using OpenAI client)
   try {
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${openaiApiKey}`,
-      },
-      body: JSON.stringify({
-        model: 'gpt-4o', // モデルはtech-direction.mdのBYOK方式に従う
-        messages: messages,
-        stream: true,
-      }),
+    const openai = new OpenAI({ apiKey: openaiApiKey });
+
+    const chatCompletion = await openai.chat.completions.create({
+      model: 'gpt-4o',
+      messages: messages,
+      stream: true,
     });
-    console.log('OpenAI API response status:', response.status);
 
-    if (!response.ok || !response.body) {
-      throw new Error(`OpenAI API request failed: ${response.statusText}`);
-    }
-
-    const reader = response.body.getReader();
+    const reader = chatCompletion.choices[0]?.delta?.content.getReader(); // Assuming stream is handled this way
     const decoder = new TextDecoder();
     let assistantResponseContent = '';
 
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      const chunk = decoder.decode(value);
-      const lines = chunk.split('\n').filter(line => line.trim() !== '');
-      for (const line of lines) {
-        if (line.startsWith('data: ')) {
-          const data = line.substring(6);
-          if (data === '[DONE]') {
-            break;
-          }
-          const json = JSON.parse(data);
-          const content = json.choices[0]?.delta?.content || '';
-          if (content) {
-            assistantResponseContent += content;
-          }
-        }
+    if (reader) {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        assistantResponseContent += decoder.decode(value);
       }
     }
-    console.log('chatApi assistantResponseContent:', assistantResponseContent);
 
     // 会話履歴をSupabaseに保存 (アシスタントメッセージ)
     await supabase.from('chat_messages').insert({
@@ -113,6 +89,9 @@ chatApi.get('/history', async (c) => {
   }
 
   try {
+    // Use c.env for Supabase client initialization
+    const supabase = createClient(c.env.SUPABASE_URL, c.env.SUPABASE_ANON_KEY);
+
     const { data: messages, error } = await supabase
       .from('chat_messages')
       .select('*')

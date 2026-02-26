@@ -5,6 +5,13 @@ type Variables = {
   userId: string | undefined;
 }
 
+type Bindings = {
+  SUPABASE_URL: string;
+  SUPABASE_ANON_KEY: string;
+  GEMINI_API_KEY: string;
+  OPENAI_API_KEY: string;
+}
+
 const mockGetUser = vi.fn(() => ({ data: { user: { id: 'test-user-id' } }, error: null }));
 
 const mockInsert = vi.fn(() => ({
@@ -89,15 +96,27 @@ vi.mock('openai', () => {
     OpenAI: vi.fn(() => ({
       chat: {
         completions: {
-          create: vi.fn(async function* () {
-            const encoder = new TextEncoder();
-            const createChunk = (content: string) => `data: ${JSON.stringify({
+          create: vi.fn(async ({ stream }: { stream: boolean }) => {
+            if (stream) {
+              return {
+                choices: [{
+                  delta: {
+                    content: new ReadableStream({
+                      start(controller) {
+                        const encoder = new TextEncoder();
+                        controller.enqueue(encoder.encode('AI response'));
+                        controller.close();
+                      },
+                    }),
+                  },
+                }],
+              };
+            }
+            return {
               choices: [{
-                delta: { content: content }
+                message: { content: 'AI response' }
               }]
-            })}\n\n`;
-            yield encoder.encode(createChunk('AI response'));
-            yield encoder.encode('data: [DONE]\n\n');
+            };
           }),
         },
       },
@@ -106,10 +125,15 @@ vi.mock('openai', () => {
 });
 
 // Create a test Hono app
-const app = new Hono<{ Variables: Variables }>();
+const app = new Hono<{ Variables: Variables, Bindings: Bindings }>();
 app.use('*', async (c, next) => {
-  // Mock authentication middleware
   c.set('userId', 'test-user-id');
+  c.env = {
+    SUPABASE_URL: 'mock-supabase-url',
+    SUPABASE_ANON_KEY: 'mock-supabase-anon-key',
+    GEMINI_API_KEY: 'mock-gemini-key',
+    OPENAI_API_KEY: 'mock-openai-key',
+  };
   await next();
 });
 let chatApi: typeof import('../../api/chat').default;
@@ -173,9 +197,15 @@ describe('Chat Feature Integration Tests', () => {
 
   it('should prevent unauthenticated access to chat API', async () => {
     // Modify the mock auth middleware to return no user
-    const unauthenticatedApp = new Hono<{ Variables: Variables }>();
+    const unauthenticatedApp = new Hono<{ Variables: Variables, Bindings: Bindings }>();
     unauthenticatedApp.use('*', async (c, next) => {
       c.set('userId', undefined); // No user ID
+      c.env = {
+        SUPABASE_URL: 'mock-supabase-url',
+        SUPABASE_ANON_KEY: 'mock-supabase-anon-key',
+        GEMINI_API_KEY: 'mock-gemini-key',
+        OPENAI_API_KEY: 'mock-openai-key',
+      };
       await next();
     });
     unauthenticatedApp.route('/api/chat', chatApi);

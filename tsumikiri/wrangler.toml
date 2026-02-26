@@ -14,4 +14,3 @@ database_id = "YOUR_D1_DATABASE_ID"
 
 [site]
 bucket = "./dist"
-entry-point = "worker"
