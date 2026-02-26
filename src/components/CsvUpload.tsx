@@ -201,12 +201,12 @@ const CsvUpload: React.FC = () => {
   
   const handleDownloadReport = () => {
     if (!report) return;
-    const blob = new Blob([report], { type: 'text/html;charset=utf-8' });
+    const blob = new Blob([report], { type: 'text/markdown;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
     const baseFileName = fileName.replace(/\.[^/.]+$/, ""); // Remove extension
-    a.download = `${baseFileName}-report.html`;
+    a.download = `${baseFileName}-report.md`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);

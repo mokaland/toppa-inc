@@ -40,13 +40,21 @@ report.post('/generate', async (c) => {
       result: aiResponse,
     });
 
+    console.log('insertError in report.ts:', insertError);
+
     if (insertError) {
       console.error('Supabase insert failed:', insertError);
       return c.json({ error: 'レポート履歴の保存に失敗しました。' }, 500);
     }
 
     return streamText(c, async (stream) => {
-      await stream.write(JSON.stringify({ report: aiResponse }));
+      try {
+        await stream.write(JSON.stringify({ report: aiResponse }));
+      } catch (streamError) {
+        console.error('Error during streaming:', streamError);
+        // Attempt to send an error message, though status might be committed
+        await stream.write(JSON.stringify({ error: 'レポートのストリーミング中にエラーが発生しました。' }));
+      }
     });
 
   } catch (error) {
