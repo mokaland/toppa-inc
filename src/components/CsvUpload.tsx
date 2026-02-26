@@ -301,7 +301,7 @@ const CsvUpload: React.FC = () => {
                             onClick={handleDownloadReport}
                             className="px-4 py-2 text-sm font-medium text-primary border border-primary rounded-md hover:bg-secondary transition"
                         >
-                            HTMLをダウンロード
+                            Markdownをダウンロード
                         </button>
                     )}
                 </div>
