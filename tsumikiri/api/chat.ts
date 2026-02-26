@@ -49,22 +49,15 @@ chatApi.post('/', async (c) => {
   try {
     const openai = new OpenAI({ apiKey: openaiApiKey });
 
-    const chatCompletion = await openai.chat.completions.create({
+    const stream = await openai.chat.completions.create({
       model: 'gpt-4o',
       messages: messages,
       stream: true,
     });
 
-    const reader = chatCompletion.choices[0]?.delta?.content.getReader(); // Assuming stream is handled this way
-    const decoder = new TextDecoder();
     let assistantResponseContent = '';
-
-    if (reader) {
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        assistantResponseContent += decoder.decode(value);
-      }
+    for await (const chunk of stream) {
+      assistantResponseContent += chunk.choices[0]?.delta?.content || '';
     }
 
     // 会話履歴をSupabaseに保存 (アシスタントメッセージ)

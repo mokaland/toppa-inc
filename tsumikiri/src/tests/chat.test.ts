@@ -98,20 +98,18 @@ vi.mock('openai', () => {
         completions: {
           create: vi.fn(async ({ stream }: { stream: boolean }) => {
             if (stream) {
-              return {
-                choices: [{
-                  delta: {
-                    content: new ReadableStream({
-                      start(controller) {
-                        const encoder = new TextEncoder();
-                        controller.enqueue(encoder.encode('AI response'));
-                        controller.close();
-                      },
-                    }),
-                  },
-                }],
-              };
+              // For streaming, return an async iterable
+              return (async function* () {
+                yield {
+                  choices: [{
+                    delta: {
+                      content: 'AI response'
+                    }
+                  }]
+                };
+              })();
             }
+            // For non-streaming, return a single object
             return {
               choices: [{
                 message: { content: 'AI response' }
