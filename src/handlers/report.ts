@@ -32,13 +32,18 @@ report.post('/generate', async (c) => {
     // Generate a simple title for the report
     const reportTitle = `AI Report: ${userInstruction.substring(0, 50)}${userInstruction.length > 50 ? '...' : ''}`;
     
-    await supabase.from('reports').insert({
+    const { error: insertError } = await supabase.from('reports').insert({
       user_id: user_id,
       title: reportTitle,
       file_name: 'generated_report.md', // Placeholder file name
       prompt: fullPrompt,
       result: aiResponse,
     });
+
+    if (insertError) {
+      console.error('Supabase insert failed:', insertError);
+      return c.json({ error: 'レポート履歴の保存に失敗しました。' }, 500);
+    }
 
     return streamText(c, async (stream) => {
       await stream.write(JSON.stringify({ report: aiResponse }));

@@ -27,6 +27,7 @@ const CsvUpload: React.FC = () => {
   const [report, setReport] = useState<string>('');
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string>('');
+  const [successMessage, setSuccessMessage] = useState<string>('');
   const [fileName, setFileName] = useState<string>('');
   const [csvPreview, setCsvPreview] = useState<string[][] | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -50,6 +51,7 @@ const CsvUpload: React.FC = () => {
     setCsvPreview(null);
     setFileName('');
     setReport('');
+    setSuccessMessage('');
 
     const droppedFile = event.dataTransfer.files?.[0];
 
@@ -73,6 +75,7 @@ const CsvUpload: React.FC = () => {
     setCsvPreview(null);
     setFileName('');
     setReport('');
+    setSuccessMessage('');
 
     const selectedFile = event.target.files?.[0];
 
@@ -125,6 +128,7 @@ const CsvUpload: React.FC = () => {
 
     setIsLoading(true);
     setError('');
+    setSuccessMessage('');
     setReport('');
 
     try {
@@ -177,6 +181,7 @@ const CsvUpload: React.FC = () => {
       if (reportData.report) {
         const reportHtml = await marked.parse(reportData.report);
         setReport(reportHtml);
+        setSuccessMessage('レポートが正常に生成されました！');
       } else {
         throw new Error('APIからのレスポンスにレポートが含まれていません。');
       }
@@ -284,6 +289,7 @@ const CsvUpload: React.FC = () => {
         </div>
         
         {error && <div className="bg-danger-light border border-red-400 text-danger px-4 py-3 rounded-md mb-6" role="alert">{error}</div>}
+        {successMessage && <div className="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded-md mb-6" role="alert">{successMessage}</div>}
 
         {/* --- Step 4: Result --- */}
         {(isLoading || report) && (
