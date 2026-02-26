@@ -11,6 +11,9 @@ interface Env {
 }
 import { streamText } from 'hono/streaming';
 
+vi.mock('hono/streaming', () => ({ streamText: vi.fn() }));
+
+const mockStreamText = vi.mocked(streamText); // Correctly mock streamText
 
 // Define a minimal interface for the mocked GoogleGenerativeAI model
 interface MockGenerativeModel {
@@ -50,6 +53,9 @@ interface MockStreamingApi {
   abort: ReturnType<typeof vi.fn>;
 }
 
+let mockSupabaseFrom: MockedFunction<(tableName: string) => MockPostgrestFilterBuilder>;
+let mockGenerateContentRef: ReturnType<typeof vi.fn>; // Mutable reference for generateContent mock
+
 // Mock the GoogleGenerativeAI globally, and its generateContent will be controlled from beforeEach
 vi.mock('@google/generative-ai', () => {
   const mockGetGenerativeModel = vi.fn((): MockGenerativeModel => ({
@@ -61,28 +67,11 @@ vi.mock('@google/generative-ai', () => {
   return { GoogleGenerativeAI };
 });
 
-const exportedMockSupabaseFrom: { from?: MockedFunction<(tableName: string) => MockPostgrestFilterBuilder>; } = {};
-
-vi.mock('../lib/supabaseClient', () => {
-  const _mockFrom = vi.fn((_tableName: string) => ({
-    insert: vi.fn(),
-    select: vi.fn(() => ({} as MockPostgrestFilterBuilder)),
-    eq: vi.fn(() => ({} as MockPostgrestFilterBuilder)),
-    order: vi.fn(() => ({} as MockPostgrestFilterBuilder)),
-    limit: vi.fn(() => ({} as MockPostgrestFilterBuilder)),
-    single: vi.fn(() => ({} as MockPostgrestFilterBuilder)),
-  }) as MockPostgrestFilterBuilder);
-  exportedMockSupabaseFrom.from = _mockFrom; // Assign to a property of the global object
-  return {
-    supabase: {
-      from: _mockFrom,
-    },
-  };
-});
-const mockStreamText = vi.mocked(streamText); // Correctly mock streamText
-
-
-let mockGenerateContentRef: ReturnType<typeof vi.fn>; // Mutable reference for generateContent mock
+vi.mock('../lib/supabaseClient', () => ({
+  supabase: {
+    from: vi.fn((tableName: string) => mockSupabaseFrom(tableName)),
+  },
+}));
 
 
 
@@ -95,6 +84,8 @@ describe('report handler', () => {
       SUPABASE_ANON_KEY: 'mock-supabase-anon-key',
     };
   
+    let capturedInsertMock: ReturnType<typeof vi.fn>;
+
     beforeEach(() => {
       vi.clearAllMocks();
       consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
@@ -102,26 +93,23 @@ describe('report handler', () => {
                   app.route('/report', reportHandler); // Mount the reportHandler Hono instance
             
                   mockGenerateContentRef = vi.fn(); // Re-initialize for each test
-            
-                  // Default mock for successful AI response
-                  mockGenerateContentRef.mockResolvedValue({
-                    response: {
-                      text: () => 'Mock AI Report Content',
-                    },
-                  });
-            
-                  // Default mock for successful Supabase insert
-                  // Use mockImplementation to simulate from().insert() chain
-                  exportedMockSupabaseFrom.from!.mockImplementation((_tableName: string) => {
-                    const mockInsert = vi.fn().mockResolvedValue({ data: [{ id: 1, user_id: 'test-user-id', title: 'Mock AI Report' }], error: null });
+                  capturedInsertMock = vi.fn().mockResolvedValue({ data: [{ id: 1, user_id: 'test-user-id', title: 'Mock AI Report' }], error: null });
+                  mockSupabaseFrom = vi.fn((_tableName: string) => {
                     return {
-                      insert: mockInsert,
+                      insert: capturedInsertMock,
                       select: vi.fn(() => ({} as MockPostgrestFilterBuilder)),
                       eq: vi.fn(() => ({} as MockPostgrestFilterBuilder)),
                       order: vi.fn(() => ({} as MockPostgrestFilterBuilder)),
                       limit: vi.fn(() => ({} as MockPostgrestFilterBuilder)),
                       single: vi.fn(() => ({} as MockPostgrestFilterBuilder)),
                     };
+                  }) as MockedFunction<(tableName: string) => MockPostgrestFilterBuilder>;
+            
+                  // Default mock for successful AI response
+                  mockGenerateContentRef.mockResolvedValue({
+                    response: {
+                      text: () => 'Mock AI Report Content',
+                    },
                   });
             
                   // Reset mockStreamText implementation for each test
@@ -166,10 +154,8 @@ describe('report handler', () => {
 
     expect(res.status).toBe(200);
     expect(mockGenerateContentRef).toHaveBeenCalledTimes(1);
-    expect(exportedMockSupabaseFrom.from).toHaveBeenCalledWith('reports');
-    // Correct way to assert on the insert call after from('reports')
-    const insertMock = exportedMockSupabaseFrom.from!('reports').insert;
-    expect(insertMock).toHaveBeenCalledWith({
+    expect(mockSupabaseFrom).toHaveBeenCalledWith('reports');
+    expect(capturedInsertMock).toHaveBeenCalledWith({
       user_id: 'test-user-id',
       title: expect.any(String),
       file_name: 'generated_report.md',
@@ -215,7 +201,7 @@ describe('report handler', () => {
     expect(res.status).toBe(400);
     expect(await res.json()).toEqual({ error: 'User ID is required' });
     expect(mockGenerateContentRef).not.toHaveBeenCalled();
-    expect(exportedMockSupabaseFrom.from).not.toHaveBeenCalled(); // Changed to check mockSupabaseFrom directly
+    expect(mockSupabaseFrom).not.toHaveBeenCalled(); // Changed to check mockSupabaseFrom directly
   });
 
   it('should return 500 if Gemini API request fails', async () => {
@@ -234,15 +220,15 @@ describe('report handler', () => {
     expect(res.status).toBe(500);
     expect(await res.json()).toEqual({ error: 'レポートの生成に失敗しました。もう一度お試しください' });
     expect(mockGenerateContentRef).toHaveBeenCalledTimes(1);
-    expect(exportedMockSupabaseFrom.from).not.toHaveBeenCalled(); // Supabase should not be called on Gemini API failure
-    expect(exportedMockSupabaseFrom.from!('reports').insert).not.toHaveBeenCalled(); // Check insert on the result of from('reports')
+    expect(mockSupabaseFrom).not.toHaveBeenCalled(); // Supabase should not be called on Gemini API failure
+    expect(capturedInsertMock).not.toHaveBeenCalled(); // Check insert on the result of from('reports')
     expect(consoleErrorSpy).toHaveBeenCalledWith('Gemini API request failed:', expect.any(Error));
   });
 
   it('should return 500 if Supabase insert fails', async () => {
     // Mock only the insert call for this specific test case
-    exportedMockSupabaseFrom.from!.mockImplementation((_tableName: string) => {
-      const mockInsert = vi.fn().mockResolvedValue({
+    mockSupabaseFrom.mockImplementation((_tableName: string) => {
+      capturedInsertMock.mockResolvedValueOnce({
         error: {
           message: 'Supabase insert error mock',
           code: '23505', // Example code
@@ -251,7 +237,7 @@ describe('report handler', () => {
         } as any,
       });
       return {
-        insert: mockInsert,
+        insert: capturedInsertMock,
         select: vi.fn(() => ({} as MockPostgrestFilterBuilder)),
         eq: vi.fn(() => ({} as MockPostgrestFilterBuilder)),
         order: vi.fn(() => ({} as MockPostgrestFilterBuilder)),
@@ -273,8 +259,13 @@ describe('report handler', () => {
     expect(res.status).toBe(500);
     expect(await res.json()).toEqual({ error: 'レポート履歴の保存に失敗しました。' });
     expect(mockGenerateContentRef).toHaveBeenCalledTimes(1);
-    expect(exportedMockSupabaseFrom.from).toHaveBeenCalledWith('reports');
-    expect(exportedMockSupabaseFrom.from!('reports').insert).toHaveBeenCalledTimes(1); // Check insert on the result of from('reports')
-    expect(consoleErrorSpy).toHaveBeenCalledWith('Supabase insert failed:', expect.any(Error));
+    expect(mockSupabaseFrom).toHaveBeenCalledWith('reports');
+    expect(capturedInsertMock).toHaveBeenCalledTimes(1); // Check insert on the result of from('reports')
+    expect(consoleErrorSpy).toHaveBeenCalledWith('Supabase insert failed:', expect.objectContaining({
+      message: 'Supabase insert error mock',
+      code: '23505',
+      details: 'mock details',
+      hint: 'mock hint',
+    }));
   });
 });
