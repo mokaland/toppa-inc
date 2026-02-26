@@ -5,8 +5,6 @@ import { supabaseMiddleware } from './middleware/supabase';
 import { authMiddleware } from './middleware/auth';
 import csvUpload from '../../../src/handlers/csvUpload';
 import report from '../../../src/handlers/report';
-import { createClient } from '@supabase/supabase-js';
-import { OpenAI } from 'openai';
 
 type Variables = {
   userId: string | undefined;

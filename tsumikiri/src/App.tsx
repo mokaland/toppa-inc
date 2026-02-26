@@ -3,9 +3,10 @@ import { BrowserRouter as Router, Route, Routes, Navigate } from 'react-router-d
 import Auth from './pages/Auth';
 import Chat from './pages/Chat';
 import { supabase } from './lib/supabase';
+import { Session } from '@supabase/supabase-js';
 
 const App: React.FC = () => {
-  const [session, setSession] = useState<any>(null);
+  const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {

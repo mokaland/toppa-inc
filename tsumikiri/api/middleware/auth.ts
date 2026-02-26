@@ -1,12 +1,12 @@
 
 import { createMiddleware } from 'hono/factory';
-import { SupabaseClient } from '@supabase/supabase-js';
+import { SupabaseClient, User } from '@supabase/supabase-js';
 
 // 環境変数の型定義
 type Env = {
   Variables: {
     supabase: SupabaseClient;
-    user: any; // SupabaseのUser型をインポートできないためanyで代用
+    user: User | null; // SupabaseのUser型をインポートできないためanyで代用
   }
 }
 

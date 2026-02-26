@@ -97,7 +97,7 @@ chatApi.get('/history', async (c) => {
     }
 
     return c.json({ history: messages });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Error in chat history endpoint:', error);
     return c.json({ error: `Error: ${(error as Error).message}` }, 500);
   }

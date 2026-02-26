@@ -30,12 +30,19 @@ interface MockPostgrestFilterBuilder {
   single: ReturnType<typeof vi.fn>;
 }
 
+interface MockSupabaseError {
+  message: string;
+  code: string;
+  details: string;
+  hint: string;
+}
+
 interface MockStreamingApi {
   write: ReturnType<typeof vi.fn>;
-  writer?: WritableStreamDefaultWriter<any>; // Make optional and use specific type if possible, or any if not critical for test logic
+  writer?: WritableStreamDefaultWriter<unknown>; // Make optional and use specific type if possible, or any if not critical for test logic
   encoder?: TextEncoder; // Make optional
-  writable?: WritableStream<any>; // Make optional
-  abortSubscribers: any[];
+  writable?: WritableStream<unknown>; // Make optional
+  abortSubscribers: unknown[];
   onAbort: ReturnType<typeof vi.fn>;
   onClose: ReturnType<typeof vi.fn>;
   pipe: ReturnType<typeof vi.fn>;
@@ -43,7 +50,7 @@ interface MockStreamingApi {
   cancel: ReturnType<typeof vi.fn>;
   close: ReturnType<typeof vi.fn>;
   ready: Promise<void>;
-  responseReadable?: ReadableStream<any>; // Make optional
+  responseReadable?: ReadableStream<unknown>; // Make optional
   aborted: boolean;
   closed: boolean;
   writeln: ReturnType<typeof vi.fn>;
@@ -234,7 +241,7 @@ describe('report handler', () => {
           code: '23505', // Example code
           details: 'mock details',
           hint: 'mock hint',
-        } as any,
+        } as MockSupabaseError,
       });
       return {
         insert: capturedInsertMock,

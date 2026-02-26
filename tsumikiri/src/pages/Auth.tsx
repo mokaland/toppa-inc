@@ -21,8 +21,8 @@ const Auth: React.FC = () => {
         alert('サインインしました！');
         // TODO: リダイレクト処理
       }
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      setError((err as Error).message);
     } finally {
       setLoading(false);
     }

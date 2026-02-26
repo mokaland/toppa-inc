@@ -1,6 +1,14 @@
 import { describe, it, expect, vi, beforeEach, beforeAll } from 'vitest';
 import { Hono } from 'hono';
 
+interface Message {
+  id: string;
+  user_id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  created_at: string;
+}
+
 type Variables = {
   userId: string | undefined;
 }
@@ -19,11 +27,17 @@ const mockInsert = vi.fn(() => ({
   error: null,
 }));
 
-const mockSelect = vi.fn(() => mockQueryChain);
+interface MockQueryChain {
+  eq: ReturnType<typeof vi.fn<[string, string], MockQueryChain>>;
+  order: ReturnType<typeof vi.fn<[string, { ascending: boolean }], { data: Message[]; error: null }>>;
+  select: ReturnType<typeof vi.fn<[string], MockQueryChain>>;
+}
 
-const mockQueryChain: any = {
-  eq: vi.fn(() => mockQueryChain as any),
-  order: vi.fn(() => ({
+const mockSelect = vi.fn((_columns: string) => mockQueryChain);
+
+const mockQueryChain: MockQueryChain = {
+  eq: vi.fn((_column: string, _value: string) => mockQueryChain),
+  order: vi.fn((_column: string, _options: { ascending: boolean }) => ({
     data: [{
       id: 'message-id-1',
       user_id: 'test-user-id',
@@ -32,8 +46,8 @@ const mockQueryChain: any = {
       created_at: new Date().toISOString()
     }],
     error: null
-  }) as any),
-  select: mockSelect as any,
+  }) as { data: Message[]; error: null } ),
+  select: mockSelect,
 };
 
 const mockSupabaseClient = {

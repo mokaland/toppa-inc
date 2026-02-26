@@ -8,6 +8,22 @@ export default [
   pluginJs.configs.recommended,
   ...tseslint.configs.recommended,
   {
+    files: ["**/*.ts", "**/*.tsx", "**/*.js", "**/*.jsx"], // Apply to all relevant files
+    rules: {
+      // Disable base JS version of the rule
+      "no-unused-expressions": "off",
+      // Enable TypeScript version with specific options to prevent errors
+      "@typescript-eslint/no-unused-expressions": [
+        "error",
+        {
+          allowShortCircuit: true,
+          allowTernary: true,
+          allowTaggedTemplates: true,
+        },
+      ],
+    },
+  },
+  {
     files: ["**/*.{jsx,tsx}"], // Apply React-specific configs only to JSX/TSX files
     languageOptions: {
       parser: tseslint.parser,
@@ -53,5 +69,11 @@ export default [
       // We will re-evaluate if this is still needed after fixing console errors.
       "@typescript-eslint/no-unused-vars": "off",
     }
+  },
+  {
+    files: ["**/*.test.ts"],
+    rules: {
+      "@typescript-eslint/no-unused-vars": ["error", { argsIgnorePattern: "^[_]" }],
+    },
   }
 ];

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, FormEvent } from 'react';
 import { supabase } from '../lib/supabase';
+import { User } from '@supabase/supabase-js';
 
 interface Message {
   id: string;
@@ -12,7 +13,7 @@ const Chat: React.FC = () => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
-  const [user, setUser] = useState<any>(null);
+  const [user, setUser] = useState<User | null>(null);
 
   useEffect(() => {
     const fetchUser = async () => {
