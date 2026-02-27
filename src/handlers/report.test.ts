@@ -37,28 +37,7 @@ interface MockSupabaseError {
   hint: string;
 }
 
-interface MockStreamingApi {
-  write: ReturnType<typeof vi.fn>;
-  writer?: WritableStreamDefaultWriter<unknown>; // Make optional and use specific type if possible, or any if not critical for test logic
-  encoder?: TextEncoder; // Make optional
-  writable?: WritableStream<unknown>; // Make optional
-  abortSubscribers: unknown[];
-  onAbort: ReturnType<typeof vi.fn>;
-  onClose: ReturnType<typeof vi.fn>;
-  pipe: ReturnType<typeof vi.fn>;
-  pipeTo: ReturnType<typeof vi.fn>;
-  cancel: ReturnType<typeof vi.fn>;
-  close: ReturnType<typeof vi.fn>;
-  ready: Promise<void>;
-  responseReadable?: ReadableStream<unknown>; // Make optional
-  aborted: boolean;
-  closed: boolean;
-  writeln: ReturnType<typeof vi.fn>;
-  locked: boolean;
-  signal: AbortSignal;
-  sleep: ReturnType<typeof vi.fn>;
-  abort: ReturnType<typeof vi.fn>;
-}
+
 
 let mockSupabaseFrom: MockedFunction<(tableName: string) => MockPostgrestFilterBuilder>;
 let mockGenerateContentRef: ReturnType<typeof vi.fn>; // Mutable reference for generateContent mock
@@ -121,23 +100,9 @@ describe('report handler', () => {
             
                   // Reset mockStreamText implementation for each test
                   mockStreamText.mockImplementation((_c, callback) => {
-                    const mockStream: MockStreamingApi = {
+                    const mockStream = {
                       write: vi.fn(() => Promise.resolve()), // Ensure write method always resolves
-                      onAbort: vi.fn(),
-                      onClose: vi.fn(),
-                      pipe: vi.fn(),
-                      pipeTo: vi.fn(),
-                      cancel: vi.fn(),
-                      close: vi.fn(),
-                      ready: Promise.resolve(),
-                      aborted: false,
-                      closed: false,
                       writeln: vi.fn(),
-                      locked: false,
-                      signal: new AbortController().signal,
-                      sleep: vi.fn(),
-                      abort: vi.fn(),
-                      abortSubscribers: [], // Added to satisfy MockStreamingApi
                     };
                     callback(mockStream as any);
                     return new Response('mocked stream', { status: 200 });
@@ -172,26 +137,12 @@ describe('report handler', () => {
     expect(mockStreamText).toHaveBeenCalledTimes(1);
     // Verify the content passed to streamText callback
     const streamCallback = mockStreamText.mock.calls[0][1];
-    const mockStreamInstance: MockStreamingApi = {
+    const mockStreamInstance = {
       write: vi.fn(),
-      abortSubscribers: [],
-      onAbort: vi.fn(),
-      onClose: vi.fn(),
-      pipe: vi.fn(),
-      pipeTo: vi.fn(),
-      cancel: vi.fn(),
-      close: vi.fn(),
-      ready: Promise.resolve(),
-      aborted: false,
-      closed: false,
       writeln: vi.fn(),
-      locked: false,
-      signal: new AbortController().signal,
-      sleep: vi.fn(),
-      abort: vi.fn(),
     };
     await streamCallback(mockStreamInstance as any);
-    expect(mockStreamInstance.write).toHaveBeenCalledWith(JSON.stringify({ report: 'Mock AI Report Content' }));
+    expect(mockStreamInstance.write).toHaveBeenCalledWith(JSON.stringify({ document: 'Mock AI Report Content' }));
   });
 
   it('should return 400 if user_id is missing', async () => {

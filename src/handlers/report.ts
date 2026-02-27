@@ -49,7 +49,7 @@ report.post('/generate', async (c) => {
 
     return streamText(c, async (stream) => {
       try {
-        await stream.write(JSON.stringify({ report: aiResponse }));
+        await stream.write(JSON.stringify({ document: aiResponse }));
       } catch (streamError) {
         console.error('Error during streaming:', streamError);
         // Attempt to send an error message, though status might be committed
