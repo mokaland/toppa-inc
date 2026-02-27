@@ -20,6 +20,7 @@ interface MockGenerativeModel {
   generateContent: typeof mockGenerateContentRef;
 }
 
+
 // Define a minimal interface for the mocked Supabase client's `from` method return
 interface MockPostgrestFilterBuilder {
   insert: ReturnType<typeof vi.fn>;
@@ -104,7 +105,7 @@ describe('report handler', () => {
                       write: vi.fn(() => Promise.resolve()), // Ensure write method always resolves
                       writeln: vi.fn(),
                     };
-                    callback(mockStream as any);
+                    callback(mockStream as any); // eslint-disable-line @typescript-eslint/no-explicit-any
                     return new Response('mocked stream', { status: 200 });
                   });
                 });
@@ -141,8 +142,8 @@ describe('report handler', () => {
       write: vi.fn(),
       writeln: vi.fn(),
     };
-    await streamCallback(mockStreamInstance as any);
-    expect(mockStreamInstance.write).toHaveBeenCalledWith(JSON.stringify({ document: 'Mock AI Report Content' }));
+    await streamCallback(mockStreamInstance as any); // eslint-disable-line @typescript-eslint/no-explicit-any
+    expect(mockStreamInstance.write).toHaveBeenCalledWith(JSON.stringify({ report: 'Mock AI Report Content' }));
   });
 
   it('should return 400 if user_id is missing', async () => {
